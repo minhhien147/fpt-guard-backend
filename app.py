@@ -1025,9 +1025,10 @@ def main():
     Path(config.DATA_DIR).mkdir(parents=True, exist_ok=True)
     Path(config.LOGS_DIR).mkdir(parents=True, exist_ok=True)
     
-    # Khởi động scheduler
-    logger.info("\nKhởi động scheduler...")
-    scheduler.start(immediate=True)
+    # Khởi động scheduler (disabled on Railway - no Chrome browser)
+    logger.info("\nScheduler: DISABLED (Railway không hỗ trợ Chrome/Selenium)")
+    logger.info("  → Dữ liệu có thể load từ file tĩnh hoặc cập nhật manual qua /api/admin/update")
+    # scheduler.start(immediate=False)  # Tạm disable trên Railway
     
     # Lấy port từ environment variable (cho cloud platforms) hoặc dùng config
     port = int(os.environ.get('PORT', config.API_PORT))
