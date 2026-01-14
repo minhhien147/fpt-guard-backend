@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPT Guard 2.0 - Admin Dashboard</title>
+    <link rel="icon" type="image/jpeg" href="/static/images/app_icon.jpg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5568d3;
+            --secondary: #764ba2;
+            --success: #48bb78;
+            --danger: #f56565;
+            --warning: #ed8936;
+            --info: #4299e1;
+            --light: #f7fafc;
+            --dark: #2d3748;
+            --border: #e2e8f0;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            background: white;
+            border-radius: 16px;
+            padding: 24px 32px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .header h1 {
+            color: var(--primary);
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .header h1 small {
+            display: block;
+            font-size: 14px;
+            color: #718096;
+            font-weight: 400;
+            margin-top: 4px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        /* Statistics */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: var(--shadow);
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+
+        .stat-card:hover {
+            transform: translateY(-8px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .stat-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+        }
+
+        .stat-icon.blue {
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+        }
+
+        .stat-icon.green {
+            background: linear-gradient(135deg, #48bb78, #38a169);
+        }
+
+        .stat-icon.purple {
+            background: linear-gradient(135deg, #9f7aea, #805ad5);
+        }
+
+        .stat-icon.red {
+            background: linear-gradient(135deg, #f56565, #e53e3e);
+        }
+
+        .stat-card h3 {
+            color: #718096;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .number {
+            font-size: 48px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 8px 0;
+        }
+
+        .stat-card .label {
+            color: #a0aec0;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .stat-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .stat-trend.up {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .stat-trend.down {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        /* Content Card */
+        .content-card {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: var(--shadow-lg);
+            margin-bottom: 24px;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 32px;
+            border-bottom: 2px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 14px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            color: #718096;
+            position: relative;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab:hover {
+            color: var(--primary);
+            background: #edf2f7;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .tab.active {
+            color: var(--primary);
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            border-radius: 3px 3px 0 0;
+        }
+
+        .tab-badge {
+            background: var(--danger);
+            color: white;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 700;
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Table */
+        .table-wrapper {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        th, td {
+            padding: 16px;
+            text-align: left;
+        }
+
+        th {
+            background: linear-gradient(135deg, #f7fafc, #edf2f7);
+            color: var(--dark);
+            font-weight: 700;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th:first-child {
+            border-radius: 12px 0 0 0;
+        }
+
+        th:last-child {
+            border-radius: 0 12px 0 0;
+        }
+
+        td {
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+            color: var(--dark);
+        }
+
+        tr:hover td {
+            background: #f7fafc;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .badge-danger {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .badge-warning {
+            background: #feebc8;
+            color: #744210;
+        }
+
+        .badge-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        /* Search Box */
+        .search-box {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 14px 16px 14px 48px;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            font-size: 15px;
+            transition: all 0.3s;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .search-box i {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0aec0;
+        }
+
+        /* Login Form */
+        .login-form {
+            max-width: 440px;
+            margin: 100px auto;
+            background: white;
+            padding: 48px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-lg);
+            animation: slideDown 0.5s ease-out;
+        }
+
+        .login-form-icon {
+            width: 100px;
+            height: 100px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .login-form-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .login-form h2 {
+            color: var(--primary);
+            margin-bottom: 32px;
+            text-align: center;
+            font-size: 28px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--dark);
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .error-message, .success-message {
+            padding: 14px 16px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .error-message {
+            background: #fed7d7;
+            color: #742a2a;
+            border-left: 4px solid var(--danger);
+        }
+
+        .success-message {
+            background: #c6f6d5;
+            color: #22543d;
+            border-left: 4px solid var(--success);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 60px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 32px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .modal-header h3 {
+            color: var(--primary);
+            font-size: 24px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #718096;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .close-btn:hover {
+            background: #edf2f7;
+            color: var(--danger);
+        }
+
+        /* Action buttons */
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons .btn {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #a0aec0;
+        }
+
+        .empty-state i {
+            font-size: 72px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body {
+                padding: 12px;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 16px;
+                text-align: center;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tabs {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .tab {
+                flex-shrink: 0;
+            }
+
+            table {
+                font-size: 13px;
+            }
+
+            th, td {
+                padding: 12px 8px;
+            }
+        }
+
+        /* Utility Classes */
+        .text-center { text-align: center; }
+        .mt-4 { margin-top: 24px; }
+        .mb-4 { margin-bottom: 24px; }
+        .text-muted { color: #a0aec0; }
+        .fw-bold { font-weight: 700; }
+    </style>
+</head>
+<body>
+    <!-- Login Form -->
+    <div id="loginSection" class="login-form">
+        <div class="login-form-icon">
+            <img src="/static/images/app_icon.jpg" alt="FPT Guard Logo">
+        </div>
+        <h2>Admin Login</h2>
+        <div id="loginError" class="error-message"></div>
+        <form id="loginForm">
+            <div class="form-group">
+                <label><i class="fas fa-envelope"></i> Email</label>
+                <input type="email" id="loginEmail" required placeholder="admin@fptguard.com">
+            </div>
+            <div class="form-group">
+                <label><i class="fas fa-lock"></i> Password</label>
+                <input type="password" id="loginPassword" required placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">
+                <i class="fas fa-sign-in-alt"></i> Đăng nhập
+            </button>
+        </form>
+        <div style="margin-top: 24px; text-align: center; color: #718096; font-size: 13px;">
+            <p><i class="fas fa-info-circle"></i> Default: admin@fptguard.com / admin123</p>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboardSection" style="display: none;">
+        <div class="container">
+            <!-- Header -->
+            <div class="header">
+            <div class="header-left">
+                <div class="header-icon">
+                    <img src="/static/images/app_icon.jpg" alt="FPT Guard Logo">
+                </div>
+                <div>
+                    <h1>
+                        FPT Guard 2.0
+                        <small>Admin Dashboard</small>
+                    </h1>
+                </div>
+            </div>
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar">A</div>
+                    <span class="user-name" id="adminName">Admin</span>
+                    <button class="btn btn-danger" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i> Đăng xuất
+                    </button>
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div>
+                            <h3>Tổng số người dùng</h3>
+                        </div>
+                        <div class="stat-icon blue">
+                            <i class="fas fa-users"></i>
+                        </div>
+                    </div>
+                    <div class="number" id="totalUsers">0</div>
+                    <div class="label">Tổng users đăng ký</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div>
+                            <h3>Người dùng hoạt động</h3>
+                        </div>
+                        <div class="stat-icon green">
+                            <i class="fas fa-user-check"></i>
+                        </div>
+                    </div>
+                    <div class="number" id="activeUsers">0</div>
+                    <div class="label">7 ngày gần đây</div>
+                    <div class="stat-trend up">
+                        <i class="fas fa-arrow-up"></i> Tăng
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div>
+                            <h3>Người dùng mới</h3>
+                        </div>
+                        <div class="stat-icon purple">
+                            <i class="fas fa-user-plus"></i>
+                        </div>
+                    </div>
+                    <div class="number" id="newUsers">0</div>
+                    <div class="label">7 ngày gần đây</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div>
+                            <h3>Báo cáo SOS</h3>
+                        </div>
+                        <div class="stat-icon red">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                    </div>
+                    <div class="number" id="sosReports">0</div>
+                    <div class="label">Đang chờ xử lý</div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="content-card">
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('users')">
+                        <i class="fas fa-users"></i> Người dùng
+                    </button>
+                    <button class="tab" onclick="switchTab('sos')">
+                        <i class="fas fa-exclamation-triangle"></i> Báo cáo SOS
+                        <span class="tab-badge" id="sosBadge">0</span>
+                    </button>
+                    <button class="tab" onclick="switchTab('activity')">
+                        <i class="fas fa-chart-line"></i> Hoạt động
+                    </button>
+                </div>
+
+                <!-- Users Tab -->
+                <div id="usersTab" class="tab-content active">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="userSearch" placeholder="Tìm kiếm theo tên, email, MSSV..." onkeyup="searchUsers()">
+                    </div>
+                    <div class="loading" id="usersLoading">
+                        <div class="spinner"></div>
+                        <p class="mt-4">Đang tải dữ liệu...</p>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="usersTable">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-hashtag"></i> ID</th>
+                                    <th><i class="fas fa-user"></i> Họ tên</th>
+                                    <th><i class="fas fa-id-card"></i> MSSV</th>
+                                    <th><i class="fas fa-envelope"></i> Email</th>
+                                    <th><i class="fas fa-phone"></i> SĐT</th>
+                                    <th><i class="fas fa-user-tag"></i> Vai trò</th>
+                                    <th><i class="fas fa-toggle-on"></i> Trạng thái</th>
+                                    <th><i class="fas fa-clock"></i> Đăng nhập cuối</th>
+                                    <th><i class="fas fa-cog"></i> Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- Dynamic content -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- SOS Tab -->
+                <div id="sosTab" class="tab-content">
+                    <div class="loading" id="sosLoading">
+                        <div class="spinner"></div>
+                        <p class="mt-4">Đang tải dữ liệu...</p>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="sosTable">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-hashtag"></i> ID</th>
+                                    <th><i class="fas fa-user"></i> Người báo cáo</th>
+                                    <th><i class="fas fa-envelope"></i> Email</th>
+                                    <th><i class="fas fa-phone"></i> SĐT</th>
+                                    <th><i class="fas fa-map-marker-alt"></i> Vị trí</th>
+                                    <th><i class="fas fa-comment"></i> Tin nhắn</th>
+                                    <th><i class="fas fa-flag"></i> Trạng thái</th>
+                                    <th><i class="fas fa-clock"></i> Thời gian</th>
+                                    <th><i class="fas fa-cog"></i> Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sosTableBody">
+                                <!-- Dynamic content -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Activity Tab -->
+                <div id="activityTab" class="tab-content">
+                    <div class="loading" id="activityLoading">
+                        <div class="spinner"></div>
+                        <p class="mt-4">Đang tải dữ liệu...</p>
+                    </div>
+                    <div id="activityContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-user-circle"></i> Chi tiết người dùng</h3>
+                <button class="close-btn" onclick="closeUserModal()">&times;</button>
+            </div>
+            <div id="userModalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('adminToken');
+        let currentPage = 1;
+        let allUsers = [];
+
+        // Check if logged in
+        if (authToken) {
+            verifyToken();
+        }
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.data.user.role !== 'admin') {
+                        showError('Chỉ admin mới có thể truy cập dashboard');
+                        return;
+                    }
+                    
+                    authToken = data.data.token;
+                    localStorage.setItem('adminToken', authToken);
+                    localStorage.setItem('adminEmail', data.data.user.email);
+                    localStorage.setItem('adminName', data.data.user.full_name);
+                    
+                    showDashboard();
+                } else {
+                    showError(data.error || 'Đăng nhập thất bại');
+                }
+            } catch (error) {
+                showError('Lỗi kết nối. Vui lòng thử lại.');
+            }
+        });
+
+        function showError(message) {
+            const errorDiv = document.getElementById('loginError');
+            errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+            errorDiv.style.display = 'block';
+            setTimeout(() => { errorDiv.style.display = 'none'; }, 5000);
+        }
+
+        async function verifyToken() {
+            try {
+                const response = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.data.role === 'admin') {
+                        showDashboard();
+                        return;
+                    }
+                }
+                
+                logout();
+            } catch (error) {
+                logout();
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('dashboardSection').style.display = 'block';
+            const name = localStorage.getItem('adminName') || 'Admin';
+            document.getElementById('adminName').textContent = name;
+            document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+            
+            loadStatistics();
+            loadUsers();
+        }
+
+        function logout() {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminEmail');
+            localStorage.removeItem('adminName');
+            authToken = null;
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('dashboardSection').style.display = 'none';
+        }
+
+        async function loadStatistics() {
+            try {
+                const response = await fetch('/api/admin/statistics', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('totalUsers').textContent = data.data.users.total_users;
+                    document.getElementById('activeUsers').textContent = data.data.users.active_users;
+                    document.getElementById('newUsers').textContent = data.data.users.new_users_7days;
+                }
+            } catch (error) {
+                console.error('Error loading statistics:', error);
+            }
+        }
+
+        async function loadUsers(page = 1) {
+            document.getElementById('usersLoading').style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/admin/users?limit=50&offset=${(page - 1) * 50}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    allUsers = data.data.users;
+                    renderUsers(allUsers);
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+            } finally {
+                document.getElementById('usersLoading').style.display = 'none';
+            }
+        }
+
+        function renderUsers(users) {
+            const tbody = document.getElementById('usersTableBody');
+            
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><i class="fas fa-users-slash"></i><h3>Không tìm thấy người dùng</h3></td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            
+            users.forEach(user => {
+                const tr = document.createElement('tr');
+                const lastLogin = user.last_login ? new Date(user.last_login).toLocaleString('vi-VN') : 'Chưa đăng nhập';
+                
+                tr.innerHTML = `
+                    <td><strong>#${user.id}</strong></td>
+                    <td><i class="fas fa-user-circle"></i> ${user.full_name}</td>
+                    <td>${user.student_id || 'N/A'}</td>
+                    <td><i class="fas fa-envelope"></i> ${user.email}</td>
+                    <td><i class="fas fa-phone"></i> ${user.phone}</td>
+                    <td><span class="badge ${user.role === 'admin' ? 'badge-danger' : 'badge-info'}">
+                        <i class="fas fa-${user.role === 'admin' ? 'user-shield' : 'user'}"></i> ${user.role}
+                    </span></td>
+                    <td><span class="badge ${user.is_active ? 'badge-success' : 'badge-danger'}">
+                        <i class="fas fa-${user.is_active ? 'check-circle' : 'times-circle'}"></i> ${user.is_active ? 'Active' : 'Disabled'}
+                    </span></td>
+                    <td><i class="fas fa-clock"></i> ${lastLogin}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="viewUser(${user.id})">
+                                <i class="fas fa-eye"></i> Xem
+                            </button>
+                            <button class="btn ${user.is_active ? 'btn-warning' : 'btn-success'}" onclick="toggleUserStatus(${user.id}, ${!user.is_active})">
+                                <i class="fas fa-${user.is_active ? 'lock' : 'unlock'}"></i> ${user.is_active ? 'Khóa' : 'Mở'}
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function searchUsers() {
+            const searchTerm = document.getElementById('userSearch').value.toLowerCase();
+            const filteredUsers = allUsers.filter(user => 
+                user.full_name.toLowerCase().includes(searchTerm) ||
+                user.email.toLowerCase().includes(searchTerm) ||
+                (user.student_id && user.student_id.toLowerCase().includes(searchTerm))
+            );
+            renderUsers(filteredUsers);
+        }
+
+        async function viewUser(userId) {
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const user = data.data.user;
+                    const activity = data.data.recent_activity;
+                    
+                    let activityHtml = '<h4><i class="fas fa-history"></i> Hoạt động gần đây:</h4><ul style="list-style: none; padding: 0;">';
+                    activity.forEach(act => {
+                        activityHtml += `<li style="padding: 8px; border-bottom: 1px solid #eee;"><i class="fas fa-dot-circle"></i> ${act.action} - ${new Date(act.created_at).toLocaleString('vi-VN')}</li>`;
+                    });
+                    activityHtml += '</ul>';
+                    
+                    document.getElementById('userModalContent').innerHTML = `
+                        <div style="line-height: 2;">
+                            <p><strong><i class="fas fa-hashtag"></i> ID:</strong> ${user.id}</p>
+                            <p><strong><i class="fas fa-user"></i> Họ tên:</strong> ${user.full_name}</p>
+                            <p><strong><i class="fas fa-id-card"></i> MSSV:</strong> ${user.student_id || 'N/A'}</p>
+                            <p><strong><i class="fas fa-envelope"></i> Email:</strong> ${user.email}</p>
+                            <p><strong><i class="fas fa-phone"></i> SĐT:</strong> ${user.phone}</p>
+                            <p><strong><i class="fas fa-user-tag"></i> Vai trò:</strong> <span class="badge ${user.role === 'admin' ? 'badge-danger' : 'badge-info'}">${user.role}</span></p>
+                            <p><strong><i class="fas fa-calendar-plus"></i> Ngày đăng ký:</strong> ${new Date(user.created_at).toLocaleString('vi-VN')}</p>
+                            <p><strong><i class="fas fa-clock"></i> Đăng nhập cuối:</strong> ${user.last_login ? new Date(user.last_login).toLocaleString('vi-VN') : 'Chưa đăng nhập'}</p>
+                        </div>
+                        <hr style="margin: 20px 0;">
+                        ${activityHtml}
+                    `;
+                    
+                    document.getElementById('userModal').classList.add('active');
+                }
+            } catch (error) {
+                console.error('Error viewing user:', error);
+            }
+        }
+
+        function closeUserModal() {
+            document.getElementById('userModal').classList.remove('active');
+        }
+
+        async function toggleUserStatus(userId, newStatus) {
+            try {
+                const response = await fetch(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ is_active: newStatus ? 1 : 0 })
+                });
+                
+                if (response.ok) {
+                    loadUsers();
+                }
+            } catch (error) {
+                console.error('Error toggling user status:', error);
+            }
+        }
+
+        async function loadSOSReports() {
+            document.getElementById('sosLoading').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/admin/sos', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const tbody = document.getElementById('sosTableBody');
+                    const pendingCount = data.data.reports.filter(r => r.status === 'pending').length;
+                    
+                    document.getElementById('sosReports').textContent = pendingCount;
+                    document.getElementById('sosBadge').textContent = pendingCount;
+                    
+                    if (data.data.reports.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="9" class="empty-state"><i class="fas fa-check-circle"></i><h3>Không có báo cáo SOS</h3><p>Tất cả an toàn!</p></td></tr>';
+                        return;
+                    }
+                    
+                    tbody.innerHTML = '';
+                    
+                    data.data.reports.forEach(report => {
+                        const tr = document.createElement('tr');
+                        const statusClass = report.status === 'pending' ? 'warning' : report.status === 'resolved' ? 'success' : 'danger';
+                        const statusIcon = report.status === 'pending' ? 'clock' : report.status === 'resolved' ? 'check-circle' : 'times-circle';
+                        
+                        tr.innerHTML = `
+                            <td><strong>#${report.id}</strong></td>
+                            <td><i class="fas fa-user-circle"></i> ${report.full_name}</td>
+                            <td><i class="fas fa-envelope"></i> ${report.email}</td>
+                            <td><i class="fas fa-phone"></i> ${report.phone}</td>
+                            <td>
+                                <a href="https://www.google.com/maps?q=${report.location_lat},${report.location_lon}" target="_blank" class="btn btn-info" style="padding: 4px 12px; text-decoration: none;">
+                                    <i class="fas fa-map-marker-alt"></i> ${report.location_lat.toFixed(4)}, ${report.location_lon.toFixed(4)}
+                                </a>
+                            </td>
+                            <td>${report.message || 'N/A'}</td>
+                            <td><span class="badge badge-${statusClass}"><i class="fas fa-${statusIcon}"></i> ${report.status}</span></td>
+                            <td><i class="fas fa-clock"></i> ${new Date(report.created_at).toLocaleString('vi-VN')}</td>
+                            <td>
+                                <select onchange="updateSOSStatus(${report.id}, this.value)" class="form-control" style="padding: 8px; border: 2px solid #e2e8f0; border-radius: 8px;">
+                                    <option value="pending" ${report.status === 'pending' ? 'selected' : ''}>Pending</option>
+                                    <option value="resolved" ${report.status === 'resolved' ? 'selected' : ''}>Resolved</option>
+                                    <option value="cancelled" ${report.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+                                </select>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading SOS reports:', error);
+            } finally {
+                document.getElementById('sosLoading').style.display = 'none';
+            }
+        }
+
+        async function updateSOSStatus(reportId, status) {
+            try {
+                const response = await fetch(`/api/admin/sos/${reportId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status })
+                });
+                
+                if (response.ok) {
+                    loadSOSReports();
+                    loadStatistics();
+                }
+            } catch (error) {
+                console.error('Error updating SOS status:', error);
+            }
+        }
+
+        async function loadActivity() {
+            document.getElementById('activityLoading').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/admin/statistics', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const activityDiv = document.getElementById('activityContent');
+                    
+                    let html = '<h3><i class="fas fa-trophy"></i> Top 10 người dùng hoạt động nhiều nhất (7 ngày)</h3>';
+                    html += '<div class="table-wrapper"><table><thead><tr><th>Tên</th><th>Email</th><th>Số hoạt động</th></tr></thead><tbody>';
+                    
+                    data.data.activity.most_active_users.forEach((user, index) => {
+                        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
+                        html += `<tr><td>${medal} ${user.full_name}</td><td>${user.email}</td><td><strong>${user.activity_count}</strong></td></tr>`;
+                    });
+                    
+                    html += '</tbody></table></div>';
+                    
+                    html += '<h3 style="margin-top: 40px;"><i class="fas fa-chart-pie"></i> Hoạt động theo loại</h3>';
+                    html += '<div class="table-wrapper"><table><thead><tr><th>Loại hoạt động</th><th>Số lần</th></tr></thead><tbody>';
+                    
+                    for (const [action, count] of Object.entries(data.data.activity.activity_by_action)) {
+                        html += `<tr><td><i class="fas fa-dot-circle"></i> ${action}</td><td><strong>${count}</strong></td></tr>`;
+                    }
+                    
+                    html += '</tbody></table></div>';
+                    
+                    activityDiv.innerHTML = html;
+                }
+            } catch (error) {
+                console.error('Error loading activity:', error);
+            } finally {
+                document.getElementById('activityLoading').style.display = 'none';
+            }
+        }
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.closest('.tab').classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+            document.getElementById(tab + 'Tab').classList.add('active');
+            
+            // Load data
+            if (tab === 'users') loadUsers();
+            else if (tab === 'sos') loadSOSReports();
+            else if (tab === 'activity') loadActivity();
+        }
+
+        // Auto refresh every 30 seconds
+        setInterval(() => {
+            if (authToken) {
+                loadStatistics();
+                const activeTab = document.querySelector('.tab.active');
+                if (activeTab) {
+                    const tabName = activeTab.textContent.includes('Người dùng') ? 'users' :
+                                   activeTab.textContent.includes('SOS') ? 'sos' : 'activity';
+                    if (tabName === 'users') loadUsers();
+                    else if (tabName === 'sos') loadSOSReports();
+                    else if (tabName === 'activity') loadActivity();
+                }
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
