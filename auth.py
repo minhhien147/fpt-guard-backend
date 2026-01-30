@@ -36,7 +36,13 @@ def require_auth(f):
                 'error': 'Missing authentication token'
             }), 401
         
-        session = db.verify_token(token)
+        session, error_code = db.verify_token(token)
+        
+        if error_code == 'account_disabled':
+            return jsonify({
+                'success': False,
+                'error': 'Account is disabled'
+            }), 403
         
         if not session:
             return jsonify({
@@ -66,7 +72,13 @@ def require_admin(f):
                 'error': 'Missing authentication token'
             }), 401
         
-        session = db.verify_token(token)
+        session, error_code = db.verify_token(token)
+        
+        if error_code == 'account_disabled':
+            return jsonify({
+                'success': False,
+                'error': 'Account is disabled'
+            }), 403
         
         if not session:
             return jsonify({

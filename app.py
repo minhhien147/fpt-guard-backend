@@ -584,9 +584,15 @@ def refresh_token():
                 'error': 'Refresh token is required'
             }), 400
         
-        session = db.refresh_session(refresh_token)
+        new_session, error_code = db.refresh_session(refresh_token)
         
-        if not session:
+        if error_code == 'account_disabled':
+            return jsonify({
+                'success': False,
+                'error': 'Account is disabled'
+            }), 403
+        
+        if not new_session:
             return jsonify({
                 'success': False,
                 'error': 'Invalid refresh token'
@@ -594,7 +600,7 @@ def refresh_token():
         
         return jsonify({
             'success': True,
-            'data': session
+            'data': new_session
         })
         
     except Exception as e:

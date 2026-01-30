@@ -307,36 +307,38 @@ class Database:
         }
     
     def verify_token(self, token):
-        """Verify session token"""
+        """Verify session token. Returns (session_dict, error_code).
+        error_code: None = OK, 'account_disabled' = user bị khóa, None (with session None) = invalid/expired.
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
-        
         cursor.execute('''
-            SELECT s.*, u.id as user_id, u.email, u.role, u.is_active
+            SELECT s.*, u.id as user_id, u.email, u.role, u.is_active as user_is_active
             FROM sessions s
             JOIN users u ON s.user_id = u.id
             WHERE s.token = ? AND s.is_active = 1
         ''', (token,))
-        
-        session = cursor.fetchone()
+        row = cursor.fetchone()
         conn.close()
         
-        if not session:
-            return None
+        if not row:
+            return (None, None)
         
-        session = dict(session)
+        session = dict(row)
+        # User disabled: báo riêng để app hiển thị "Tài khoản đã bị khóa"
+        if not session.get('user_is_active', 1):
+            return (None, 'account_disabled')
         
         # Check if expired
         expires_at = datetime.fromisoformat(session['expires_at'])
         if datetime.now() > expires_at:
             self.invalidate_session(token)
-            return None
+            return (None, None)
         
-        # Check if user is active
-        if not session['is_active']:
-            return None
-        
-        return session
+        session['user_id'] = session['user_id']
+        session['email'] = session['email']
+        session['role'] = session['role']
+        return (session, None)
     
     def invalidate_session(self, token):
         """Invalidate session (logout)"""
@@ -348,32 +350,36 @@ class Database:
         conn.close()
     
     def refresh_session(self, refresh_token):
-        """Refresh session token"""
+        """Refresh session token. Returns (new_session, error_code).
+        error_code: None = OK, 'account_disabled' = user bị khóa."""
         conn = self.get_connection()
         cursor = conn.cursor()
+        cursor.execute('''
+            SELECT s.*, u.is_active as user_is_active
+            FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.refresh_token = ? AND s.is_active = 1
+        ''', (refresh_token,))
+        row = cursor.fetchone()
         
-        cursor.execute('SELECT * FROM sessions WHERE refresh_token = ? AND is_active = 1',
-                      (refresh_token,))
-        session = cursor.fetchone()
-        
-        if not session:
+        if not row:
             conn.close()
-            return None
+            return (None, None)
         
-        session = dict(session)
+        session = dict(row)
+        if not session.get('user_is_active', 1):
+            conn.close()
+            return (None, 'account_disabled')
         
         # Create new session
-        new_session = self.create_session(session['user_id'], 
+        new_session = self.create_session(session['user_id'],
                                           session['device_info'],
                                           session['ip_address'])
-        
-        # Invalidate old session
         cursor.execute('UPDATE sessions SET is_active = 0 WHERE refresh_token = ?',
                       (refresh_token,))
         conn.commit()
         conn.close()
-        
-        return new_session
+        return (new_session, None)
     
     # Activity logging
     
