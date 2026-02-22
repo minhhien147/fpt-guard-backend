@@ -836,6 +836,9 @@
                     <button class="tab" onclick="switchTab('activity')">
                         <i class="fas fa-chart-line"></i> Hoạt động
                     </button>
+                    <button class="tab" onclick="switchTab('groupCodes')">
+                        <i class="fas fa-key"></i> Mã nhóm
+                    </button>
                 </div>
 
                 <!-- Users Tab -->
@@ -906,6 +909,35 @@
                     </div>
                     <div id="activityContent"></div>
                 </div>
+
+                <!-- Group Codes Tab -->
+                <div id="groupCodesTab" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                        <p style="color: #718096; margin: 0;">Tạo mã nhóm để thành viên đăng nhập app bằng mã + tên, không cần tài khoản riêng.</p>
+                        <button type="button" class="btn btn-primary" onclick="openCreateGroupCodeModal()">
+                            <i class="fas fa-plus"></i> Tạo mã nhóm
+                        </button>
+                    </div>
+                    <div class="loading" id="groupCodesLoading">
+                        <div class="spinner"></div>
+                        <p class="mt-4">Đang tải...</p>
+                    </div>
+                    <div class="table-wrapper">
+                        <table id="groupCodesTable">
+                            <thead>
+                                <tr>
+                                    <th><i class="fas fa-key"></i> Mã</th>
+                                    <th><i class="fas fa-tag"></i> Tên nhóm</th>
+                                    <th><i class="fas fa-users"></i> Thành viên</th>
+                                    <th><i class="fas fa-toggle-on"></i> Trạng thái</th>
+                                    <th><i class="fas fa-clock"></i> Tạo lúc</th>
+                                    <th><i class="fas fa-cog"></i> Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody id="groupCodesTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -921,10 +953,57 @@
         </div>
     </div>
 
+    <!-- Create Group Code Modal -->
+    <div id="groupCodeModal" class="modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> Tạo mã nhóm</h3>
+                <button class="close-btn" onclick="closeGroupCodeModal()">&times;</button>
+            </div>
+            <div style="padding: 24px;">
+                <div id="groupCodeError" class="error-message"></div>
+                <div id="groupCodeSuccess" class="success-message"></div>
+                <form id="groupCodeForm" onsubmit="submitGroupCode(event)">
+                    <div class="form-group">
+                        <label>Mã nhóm *</label>
+                        <input type="text" id="gcCode" required placeholder="VD: FPT2024" maxlength="20" style="text-transform: uppercase;">
+                        <small style="color: #718096;">Thành viên sẽ nhập mã này để vào nhóm. Viết hoa, không dấu.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Tên hiển thị *</label>
+                        <input type="text" id="gcName" required placeholder="VD: Lớp SE1820">
+                    </div>
+                    <div class="form-group">
+                        <label>Mô tả (tùy chọn)</label>
+                        <input type="text" id="gcDescription" placeholder="VD: Nhóm thực tập kỳ 2024">
+                    </div>
+                    <div class="form-group">
+                        <label>Giới hạn thành viên (để trống = không giới hạn)</label>
+                        <input type="number" id="gcMaxMembers" min="1" placeholder="VD: 50">
+                    </div>
+                    <div class="form-group">
+                        <label>Hết hạn (tùy chọn, định dạng YYYY-MM-DD)</label>
+                        <input type="date" id="gcExpiresAt">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-check"></i> Tạo mã nhóm
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
         let authToken = localStorage.getItem('adminToken');
         let currentPage = 1;
         let allUsers = [];
+
+        function escapeHtml(s) {
+            if (s == null) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
 
         // Check if logged in
         if (authToken) {
@@ -1302,6 +1381,120 @@
             if (tab === 'users') loadUsers();
             else if (tab === 'sos') loadSOSReports();
             else if (tab === 'activity') loadActivity();
+            else if (tab === 'groupCodes') loadGroupCodes();
+        }
+
+        // -------- Group Codes --------
+        async function loadGroupCodes() {
+            document.getElementById('groupCodesLoading').style.display = 'block';
+            try {
+                const response = await fetch('/api/admin/group-codes', {
+                    headers: { 'Authorization': 'Bearer ' + authToken }
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Lỗi tải mã nhóm');
+                const list = data.data || [];
+                const tbody = document.getElementById('groupCodesTableBody');
+                if (list.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 32px; color: #718096;">Chưa có mã nhóm. Nhấn "Tạo mã nhóm" để tạo.</td></tr>';
+                } else {
+                    tbody.innerHTML = list.map(g => {
+                        const created = g.created_at ? new Date(g.created_at).toLocaleString('vi-VN') : '-';
+                        const memberCount = g.member_count != null ? g.member_count : 0;
+                        const maxStr = g.max_members ? memberCount + ' / ' + g.max_members : memberCount;
+                        const status = g.is_active ? '<span class="badge badge-success">Đang dùng</span>' : '<span class="badge badge-danger">Đã tắt</span>';
+                        return `<tr>
+                            <td><strong>${escapeHtml(g.code)}</strong></td>
+                            <td>${escapeHtml(g.name)}</td>
+                            <td>${maxStr}</td>
+                            <td>${status}</td>
+                            <td>${created}</td>
+                            <td>
+                                <button class="btn btn-${g.is_active ? 'warning' : 'success'}" style="padding: 6px 12px; font-size: 12px;" onclick="toggleGroupCode(${g.id}, ${g.is_active ? 0 : 1})">${g.is_active ? 'Tắt' : 'Bật'}</button>
+                                <button class="btn btn-danger" style="padding: 6px 12px; font-size: 12px; margin-left: 4px;" onclick="deleteGroupCode(${g.id}, ${JSON.stringify(g.code)})">Xóa</button>
+                            </td>
+                        </tr>`;
+                    }).join('');
+                }
+            } catch (err) {
+                document.getElementById('groupCodesTableBody').innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--danger);">' + escapeHtml(err.message) + '</td></tr>';
+            } finally {
+                document.getElementById('groupCodesLoading').style.display = 'none';
+            }
+        }
+
+        function openCreateGroupCodeModal() {
+            document.getElementById('gcCode').value = '';
+            document.getElementById('gcName').value = '';
+            document.getElementById('gcDescription').value = '';
+            document.getElementById('gcMaxMembers').value = '';
+            document.getElementById('gcExpiresAt').value = '';
+            document.getElementById('groupCodeError').style.display = 'none';
+            document.getElementById('groupCodeSuccess').style.display = 'none';
+            document.getElementById('groupCodeModal').classList.add('active');
+        }
+
+        function closeGroupCodeModal() {
+            document.getElementById('groupCodeModal').classList.remove('active');
+        }
+
+        async function submitGroupCode(e) {
+            e.preventDefault();
+            const errEl = document.getElementById('groupCodeError');
+            const okEl = document.getElementById('groupCodeSuccess');
+            errEl.style.display = 'none';
+            okEl.style.display = 'none';
+            const code = (document.getElementById('gcCode').value || '').trim().toUpperCase();
+            const name = (document.getElementById('gcName').value || '').trim();
+            const description = (document.getElementById('gcDescription').value || '').trim() || null;
+            let maxMembers = document.getElementById('gcMaxMembers').value.trim();
+            maxMembers = maxMembers ? parseInt(maxMembers, 10) : null;
+            let expiresAt = document.getElementById('gcExpiresAt').value || null;
+            if (expiresAt) expiresAt = expiresAt + 'T23:59:59';
+            try {
+                const response = await fetch('/api/admin/group-codes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ code, name, description, max_members: maxMembers, expires_at: expiresAt })
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Tạo mã thất bại');
+                okEl.textContent = 'Đã tạo mã nhóm "' + code + '". Thành viên có thể đăng nhập app bằng mã này.';
+                okEl.style.display = 'block';
+                loadGroupCodes();
+                setTimeout(() => { closeGroupCodeModal(); }, 1500);
+            } catch (err) {
+                errEl.textContent = err.message;
+                errEl.style.display = 'block';
+            }
+        }
+
+        async function toggleGroupCode(id, isActive) {
+            if (!confirm(isActive ? 'Bật lại mã nhóm này?' : 'Tắt mã nhóm? Thành viên sẽ không đăng nhập được bằng mã này.')) return;
+            try {
+                const response = await fetch('/api/admin/group-codes/' + id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+                    body: JSON.stringify({ is_active: isActive })
+                });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error);
+                loadGroupCodes();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function deleteGroupCode(id, code) {
+            if (!confirm('Xóa mã nhóm "' + code + '"? Các thành viên đã đăng nhập bằng mã này vẫn dùng được đến khi hết phiên.')) return;
+            try {
+                const response = await fetch('/api/admin/group-codes/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + authToken } });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error);
+                loadGroupCodes();
+            } catch (err) {
+                alert(err.message);
+            }
         }
 
         // Auto refresh every 30 seconds
@@ -1310,11 +1503,15 @@
                 loadStatistics();
                 const activeTab = document.querySelector('.tab.active');
                 if (activeTab) {
-                    const tabName = activeTab.textContent.includes('Người dùng') ? 'users' :
-                                   activeTab.textContent.includes('SOS') ? 'sos' : 'activity';
+                    const txt = activeTab.textContent || '';
+                    const tabName = txt.includes('Người dùng') ? 'users' :
+                                   txt.includes('SOS') ? 'sos' :
+                                   txt.includes('Hoạt động') ? 'activity' :
+                                   txt.includes('Mã nhóm') ? 'groupCodes' : null;
                     if (tabName === 'users') loadUsers();
                     else if (tabName === 'sos') loadSOSReports();
                     else if (tabName === 'activity') loadActivity();
+                    else if (tabName === 'groupCodes') loadGroupCodes();
                 }
             }
         }, 30000);

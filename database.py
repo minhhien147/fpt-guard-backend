@@ -101,6 +101,30 @@ class Database:
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
+
+        # Group codes — allow teams to login without individual accounts
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS group_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_by INTEGER,
+                is_active INTEGER DEFAULT 1,
+                max_members INTEGER,
+                expires_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+        ''')
+
+        # Add group_code_id to users (idempotent)
+        try:
+            cursor.execute('ALTER TABLE users ADD COLUMN group_code_id INTEGER REFERENCES group_codes(id)')
+        except Exception:
+            pass  # Column already exists
+
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_group_codes_code ON group_codes(code)')
         
         # Create indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
@@ -549,6 +573,152 @@ class Database:
         
         conn.commit()
         conn.close()
+
+    # -------------------------------------------------------------------------
+    # Group Codes
+    # -------------------------------------------------------------------------
+
+    def create_group_code(self, code, name, description=None, created_by=None,
+                          max_members=None, expires_at=None):
+        """Create a new group code"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO group_codes (code, name, description, created_by, is_active,
+                                        max_members, expires_at, created_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+            ''', (code.upper(), name, description, created_by,
+                  max_members, expires_at, datetime.now().isoformat()))
+            group_id = cursor.lastrowid
+            conn.commit()
+            return self.get_group_code_by_id(group_id)
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            raise ValueError(f"Group code '{code}' already exists")
+        finally:
+            conn.close()
+
+    def get_group_code_by_id(self, group_id):
+        """Get group code by ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM group_codes WHERE id = ?', (group_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_group_code_by_code(self, code):
+        """Get group code by code string"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM group_codes WHERE code = ?', (code.upper(),))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_all_group_codes(self):
+        """Get all group codes with member count"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT g.*, COUNT(u.id) as member_count
+            FROM group_codes g
+            LEFT JOIN users u ON u.group_code_id = g.id
+            GROUP BY g.id
+            ORDER BY g.created_at DESC
+        ''')
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+
+    def update_group_code(self, group_id, **kwargs):
+        """Update group code fields"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        allowed = ['name', 'description', 'is_active', 'max_members', 'expires_at']
+        updates = [(f, v) for f, v in kwargs.items() if f in allowed]
+        if updates:
+            set_clause = ', '.join(f"{f} = ?" for f, _ in updates)
+            values = [v for _, v in updates] + [group_id]
+            cursor.execute(f"UPDATE group_codes SET {set_clause} WHERE id = ?", values)
+            conn.commit()
+        conn.close()
+        return self.get_group_code_by_id(group_id)
+
+    def delete_group_code(self, group_id):
+        """Delete group code (hard delete — clears member links first)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET group_code_id = NULL WHERE group_code_id = ?', (group_id,))
+        cursor.execute('DELETE FROM group_codes WHERE id = ?', (group_id,))
+        conn.commit()
+        conn.close()
+
+    def group_login(self, code, nickname):
+        """
+        Login / register using a group code + nickname.
+        Returns the user dict (creates one if nickname is new in this group).
+        """
+        group = self.get_group_code_by_code(code)
+        if not group:
+            raise ValueError("Mã nhóm không tồn tại")
+        if not group['is_active']:
+            raise ValueError("Mã nhóm đã bị vô hiệu hóa")
+        if group['expires_at']:
+            if datetime.now() > datetime.fromisoformat(group['expires_at']):
+                raise ValueError("Mã nhóm đã hết hạn")
+
+        # Check member limit
+        if group['max_members']:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) as cnt FROM users WHERE group_code_id = ?', (group['id'],))
+            cnt = cursor.fetchone()['cnt']
+            conn.close()
+            if cnt >= group['max_members']:
+                raise ValueError("Nhóm đã đầy thành viên")
+
+        # Build a stable synthetic email for this member slot
+        safe_nick = nickname.strip().lower().replace(' ', '_')
+        synthetic_email = f"{safe_nick}__{group['code'].lower()}@group.local"
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE email = ?', (synthetic_email,))
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            user = dict(row)
+            # Update display name if nickname changed capitalisation
+            if user['full_name'] != nickname.strip():
+                user = self.update_user(user['id'], full_name=nickname.strip())
+        else:
+            # Create new group-member user (no password)
+            user = self.create_group_member(
+                full_name=nickname.strip(),
+                email=synthetic_email,
+                group_code_id=group['id'],
+            )
+        return user
+
+    def create_group_member(self, full_name, email, group_code_id):
+        """Create a group-member user (passwordless)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO users (full_name, student_id, phone, email, password_hash,
+                                   role, is_active, group_code_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+            ''', (full_name, None, '', email, '', 'group_member',
+                  group_code_id, datetime.now().isoformat()))
+            user_id = cursor.lastrowid
+            conn.commit()
+            return self.get_user_by_id(user_id)
+        finally:
+            conn.close()
 
 
 # Global database instance
