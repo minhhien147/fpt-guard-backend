@@ -19,6 +19,7 @@ from data_processor import WaterLevelProcessor
 import config
 from database import db
 from auth import require_auth, require_admin, get_client_ip, get_device_info
+from email_sender import send_verification_otp, send_resend_otp
 import json as json_module
 
 # Setup logging
@@ -77,6 +78,8 @@ def home():
             "authentication": {
                 "/api/auth/register": "Đăng ký tài khoản (POST)",
                 "/api/auth/login": "Đăng nhập (POST)",
+                "/api/auth/verify-email": "Xác thực email bằng OTP (POST, body: email + otp)",
+                "/api/auth/resend-otp": "Gửi lại mã OTP (POST, body: email)",
                 "/api/auth/group-login": "Đăng nhập bằng mã nhóm (POST, body: code + nickname)",
                 "/api/auth/logout": "Đăng xuất (POST, requires auth)",
                 "/api/auth/refresh": "Refresh token (POST)",
@@ -447,23 +450,22 @@ def register():
             password=data['password']
         )
         
-        # Create session
-        device_info = json_module.dumps(get_device_info())
-        session = db.create_session(user['id'], device_info, get_client_ip())
-        
+        # Send verification OTP
+        otp = db.generate_email_otp(user['id'])
+        send_verification_otp(user['email'], user['full_name'], otp)
+
         # Log activity
         db.log_activity(user['id'], 'registered', ip_address=get_client_ip())
-        
+
         # Remove sensitive data
         user.pop('password_hash', None)
-        
+
         return jsonify({
             'success': True,
             'data': {
                 'user': user,
-                'token': session['token'],
-                'refresh_token': session['refresh_token'],
-                'expires_at': session['expires_at']
+                'requires_verification': True,
+                'message': f'Đã gửi mã OTP đến {user["email"]}. Vui lòng kiểm tra email.'
             }
         }), 201
         
@@ -517,7 +519,19 @@ def login():
                 'success': False,
                 'error': 'Account is disabled'
             }), 403
-        
+
+        # Check email verification (skip for admin and group_member)
+        if user.get('role') not in ('admin', 'group_member') and not user.get('is_email_verified'):
+            # Re-send OTP automatically on login attempt
+            otp = db.generate_email_otp(user['id'])
+            send_verification_otp(user['email'], user['full_name'], otp)
+            return jsonify({
+                'success': False,
+                'error': 'Email chưa được xác thực. Đã gửi lại mã OTP.',
+                'requires_verification': True,
+                'email': user['email']
+            }), 403
+
         # Create session
         device_info = json_module.dumps(get_device_info())
         session = db.create_session(user['id'], device_info, get_client_ip())
@@ -544,6 +558,77 @@ def login():
             'success': False,
             'error': 'Login failed'
         }), 500
+
+
+@app.route('/api/auth/verify-email', methods=['POST'])
+def verify_email():
+    """
+    Xác thực email bằng mã OTP 6 số.
+
+    Body: { "email": "user@example.com", "otp": "123456" }
+    """
+    try:
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip().lower()
+        otp   = (data.get('otp')   or '').strip()
+
+        if not email or not otp:
+            return jsonify({'success': False, 'error': 'email và otp là bắt buộc'}), 400
+
+        result = db.verify_email_otp(email, otp)
+        if result is not True:
+            return jsonify({'success': False, 'error': result}), 400
+
+        # Create session for auto-login after verification
+        user = db.get_user_by_email(email)
+        user.pop('password_hash', None)
+        device_info = json_module.dumps(get_device_info())
+        session = db.create_session(user['id'], device_info, get_client_ip())
+        db.log_activity(user['id'], 'email_verified', ip_address=get_client_ip())
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'user': user,
+                'token': session['token'],
+                'refresh_token': session['refresh_token'],
+                'expires_at': session['expires_at'],
+            }
+        })
+    except Exception as e:
+        logger.error(f'Error verifying email: {e}')
+        return jsonify({'success': False, 'error': 'Xác thực thất bại'}), 500
+
+
+@app.route('/api/auth/resend-otp', methods=['POST'])
+def resend_otp():
+    """
+    Gửi lại mã OTP.
+
+    Body: { "email": "user@example.com" }
+    """
+    try:
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return jsonify({'success': False, 'error': 'email là bắt buộc'}), 400
+
+        user = db.get_user_by_email(email)
+        if not user:
+            return jsonify({'success': False, 'error': 'Email không tồn tại'}), 404
+        if user.get('is_email_verified'):
+            return jsonify({'success': True, 'message': 'Email đã được xác thực'})
+
+        otp = db.generate_email_otp(user['id'])
+        sent = send_resend_otp(email, user['full_name'], otp)
+
+        return jsonify({
+            'success': True,
+            'message': f'Đã gửi lại mã OTP đến {email}' if sent else 'OTP đã tạo nhưng email chưa cấu hình',
+        })
+    except Exception as e:
+        logger.error(f'Error resending OTP: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/auth/group-login', methods=['POST'])

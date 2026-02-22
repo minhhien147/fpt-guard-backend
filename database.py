@@ -122,7 +122,18 @@ class Database:
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN group_code_id INTEGER REFERENCES group_codes(id)')
         except Exception:
-            pass  # Column already exists
+            pass
+
+        # Email verification columns (idempotent)
+        for col_def in [
+            'ALTER TABLE users ADD COLUMN is_email_verified INTEGER DEFAULT 0',
+            'ALTER TABLE users ADD COLUMN email_otp TEXT',
+            'ALTER TABLE users ADD COLUMN email_otp_expires_at TEXT',
+        ]:
+            try:
+                cursor.execute(col_def)
+            except Exception:
+                pass  # Column already exists
 
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_group_codes_code ON group_codes(code)')
         
@@ -702,6 +713,47 @@ class Database:
                 group_code_id=group['id'],
             )
         return user
+
+    # -------------------------------------------------------------------------
+    # Email Verification OTP
+    # -------------------------------------------------------------------------
+
+    def generate_email_otp(self, user_id):
+        """Generate a 6-digit OTP, store it (expires in 10 minutes) and return it."""
+        import random
+        otp = f"{random.randint(0, 999999):06d}"
+        expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET email_otp = ?, email_otp_expires_at = ? WHERE id = ?',
+            (otp, expires_at, user_id)
+        )
+        conn.commit()
+        conn.close()
+        return otp
+
+    def verify_email_otp(self, email, otp):
+        """Verify OTP for given email. Returns True on success, error string on failure."""
+        user = self.get_user_by_email(email)
+        if not user:
+            return 'Email không tồn tại'
+        if user.get('is_email_verified'):
+            return True  # Already verified
+        if user.get('email_otp') != otp:
+            return 'Mã OTP không đúng'
+        expires_at = user.get('email_otp_expires_at')
+        if not expires_at or datetime.now() > datetime.fromisoformat(expires_at):
+            return 'Mã OTP đã hết hạn (10 phút)'
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET is_email_verified = 1, email_otp = NULL, email_otp_expires_at = NULL WHERE id = ?',
+            (user['id'],)
+        )
+        conn.commit()
+        conn.close()
+        return True
 
     def create_group_member(self, full_name, email, group_code_id):
         """Create a group-member user (passwordless)"""
