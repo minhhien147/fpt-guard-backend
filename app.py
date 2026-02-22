@@ -450,12 +450,12 @@ def register():
             password=data['password']
         )
         
-        # Send verification OTP
-        otp = db.generate_email_otp(user['id'])
-        email_ok, email_err = send_verification_otp(user['email'], user['full_name'], otp)
-
         # Log activity
         db.log_activity(user['id'], 'registered', ip_address=get_client_ip())
+
+        # Create session immediately after registration
+        device_info = json_module.dumps(get_device_info())
+        session = db.create_session(user['id'], device_info, get_client_ip())
 
         # Remove sensitive data
         user.pop('password_hash', None)
@@ -464,14 +464,10 @@ def register():
             'success': True,
             'data': {
                 'user': user,
-                'requires_verification': True,
-                'email_sent': email_ok,
-                'email_error': email_err if not email_ok else None,
-                'message': (
-                    f'Đã gửi mã OTP đến {user["email"]}. Vui lòng kiểm tra email.'
-                    if email_ok else
-                    f'Đăng ký thành công nhưng không gửi được email OTP: {email_err}'
-                )
+                'token': session['token'],
+                'refresh_token': session['refresh_token'],
+                'expires_at': session['expires_at'],
+                'message': 'Đăng ký thành công'
             }
         }), 201
         
@@ -524,18 +520,6 @@ def login():
             return jsonify({
                 'success': False,
                 'error': 'Account is disabled'
-            }), 403
-
-        # Check email verification (skip for admin and group_member)
-        if user.get('role') not in ('admin', 'group_member') and not user.get('is_email_verified'):
-            # Re-send OTP automatically on login attempt
-            otp = db.generate_email_otp(user['id'])
-            send_verification_otp(user['email'], user['full_name'], otp)
-            return jsonify({
-                'success': False,
-                'error': 'Email chưa được xác thực. Đã gửi lại mã OTP.',
-                'requires_verification': True,
-                'email': user['email']
             }), 403
 
         # Create session
