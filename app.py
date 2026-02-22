@@ -452,7 +452,7 @@ def register():
         
         # Send verification OTP
         otp = db.generate_email_otp(user['id'])
-        send_verification_otp(user['email'], user['full_name'], otp)
+        email_ok, email_err = send_verification_otp(user['email'], user['full_name'], otp)
 
         # Log activity
         db.log_activity(user['id'], 'registered', ip_address=get_client_ip())
@@ -465,7 +465,13 @@ def register():
             'data': {
                 'user': user,
                 'requires_verification': True,
-                'message': f'Đã gửi mã OTP đến {user["email"]}. Vui lòng kiểm tra email.'
+                'email_sent': email_ok,
+                'email_error': email_err if not email_ok else None,
+                'message': (
+                    f'Đã gửi mã OTP đến {user["email"]}. Vui lòng kiểm tra email.'
+                    if email_ok else
+                    f'Đăng ký thành công nhưng không gửi được email OTP: {email_err}'
+                )
             }
         }), 201
         
@@ -620,11 +626,13 @@ def resend_otp():
             return jsonify({'success': True, 'message': 'Email đã được xác thực'})
 
         otp = db.generate_email_otp(user['id'])
-        sent = send_resend_otp(email, user['full_name'], otp)
+        sent, send_err = send_resend_otp(email, user['full_name'], otp)
 
         return jsonify({
             'success': True,
-            'message': f'Đã gửi lại mã OTP đến {email}' if sent else 'OTP đã tạo nhưng email chưa cấu hình',
+            'email_sent': sent,
+            'email_error': send_err if not sent else None,
+            'message': f'Đã gửi lại mã OTP đến {email}' if sent else f'Không gửi được email: {send_err}',
         })
     except Exception as e:
         logger.error(f'Error resending OTP: {e}')

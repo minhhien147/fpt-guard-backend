@@ -14,33 +14,34 @@ from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
-SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
-SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
-SMTP_USER = os.environ.get('MAIL_USERNAME', '')
-SMTP_PASS = os.environ.get('MAIL_PASSWORD', '').replace(' ', '')
-FROM_NAME = os.environ.get('MAIL_FROM_NAME', 'SAFE GUARD')
+def _send(to_email: str, subject: str, html_body: str) -> tuple[bool, str]:
+    """Returns (success, error_message)"""
+    smtp_host = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
+    smtp_port = int(os.environ.get('SMTP_PORT', '587'))
+    smtp_user = os.environ.get('MAIL_USERNAME', '')
+    smtp_pass = os.environ.get('MAIL_PASSWORD', '').replace(' ', '')
+    from_name = os.environ.get('MAIL_FROM_NAME', 'SAFE GUARD')
 
-
-def _send(to_email: str, subject: str, html_body: str) -> bool:
-    if not SMTP_USER or not SMTP_PASS:
-        logger.warning('Email not sent: MAIL_USERNAME / MAIL_PASSWORD not configured')
-        return False
+    if not smtp_user or not smtp_pass:
+        msg = 'MAIL_USERNAME / MAIL_PASSWORD chưa được cấu hình'
+        logger.warning(f'Email not sent: {msg}')
+        return False, msg
     try:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = f'{FROM_NAME} <{SMTP_USER}>'
+        msg['From'] = f'{from_name} <{smtp_user}>'
         msg['To'] = to_email
         msg.attach(MIMEText(html_body, 'html', 'utf-8'))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
             server.ehlo()
             server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, [to_email], msg.as_string())
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, [to_email], msg.as_string())
         logger.info(f'Email sent → {to_email}: {subject}')
-        return True
+        return True, ''
     except Exception as e:
         logger.error(f'Failed to send email → {to_email}: {e}')
-        return False
+        return False, str(e)
 
 
 def _otp_html(full_name: str, otp: str, is_resend: bool = False) -> str:
@@ -76,11 +77,11 @@ def _otp_html(full_name: str, otp: str, is_resend: bool = False) -> str:
     </div>"""
 
 
-def send_verification_otp(to_email: str, full_name: str, otp: str) -> bool:
+def send_verification_otp(to_email: str, full_name: str, otp: str) -> tuple[bool, str]:
     return _send(to_email, f'[SAFE GUARD] Mã xác thực email: {otp}',
                  _otp_html(full_name, otp, is_resend=False))
 
 
-def send_resend_otp(to_email: str, full_name: str, otp: str) -> bool:
+def send_resend_otp(to_email: str, full_name: str, otp: str) -> tuple[bool, str]:
     return _send(to_email, f'[SAFE GUARD] Mã xác thực mới: {otp}',
                  _otp_html(full_name, otp, is_resend=True))
