@@ -343,14 +343,18 @@ class Database:
     
     def verify_token(self, token):
         """Verify session token. Returns (session_dict, error_code).
-        error_code: None = OK, 'account_disabled' = user bị khóa, None (with session None) = invalid/expired.
+        error_code: None = OK, 'account_disabled' = user bị khóa hoặc group code bị tắt,
+        None (with session None) = invalid/expired.
         """
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, u.id as user_id, u.email, u.role, u.is_active as user_is_active
+            SELECT s.*, u.id as user_id, u.email, u.role, u.is_active as user_is_active,
+                   u.group_code_id,
+                   gc.is_active as group_is_active
             FROM sessions s
             JOIN users u ON s.user_id = u.id
+            LEFT JOIN group_codes gc ON u.group_code_id = gc.id
             WHERE s.token = ? AND s.is_active = 1
         ''', (token,))
         row = cursor.fetchone()
@@ -360,8 +364,12 @@ class Database:
             return (None, None)
         
         session = dict(row)
-        # User disabled: báo riêng để app hiển thị "Tài khoản đã bị khóa"
+        # User bị khóa trực tiếp
         if not session.get('user_is_active', 1):
+            return (None, 'account_disabled')
+
+        # Group member mà group code bị tắt → coi như bị khóa
+        if session.get('group_code_id') and not session.get('group_is_active', 1):
             return (None, 'account_disabled')
         
         # Check if expired
@@ -386,13 +394,16 @@ class Database:
     
     def refresh_session(self, refresh_token):
         """Refresh session token. Returns (new_session, error_code).
-        error_code: None = OK, 'account_disabled' = user bị khóa."""
+        error_code: None = OK, 'account_disabled' = user bị khóa hoặc group code bị tắt."""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT s.*, u.is_active as user_is_active
+            SELECT s.*, u.is_active as user_is_active,
+                   u.group_code_id,
+                   gc.is_active as group_is_active
             FROM sessions s
             JOIN users u ON s.user_id = u.id
+            LEFT JOIN group_codes gc ON u.group_code_id = gc.id
             WHERE s.refresh_token = ? AND s.is_active = 1
         ''', (refresh_token,))
         row = cursor.fetchone()
@@ -403,6 +414,10 @@ class Database:
         
         session = dict(row)
         if not session.get('user_is_active', 1):
+            conn.close()
+            return (None, 'account_disabled')
+
+        if session.get('group_code_id') and not session.get('group_is_active', 1):
             conn.close()
             return (None, 'account_disabled')
         
