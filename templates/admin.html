@@ -1152,9 +1152,12 @@
                     <td>${user.student_id || 'N/A'}</td>
                     <td><i class="fas fa-envelope"></i> ${user.email}</td>
                     <td><i class="fas fa-phone"></i> ${user.phone}</td>
-                    <td><span class="badge ${user.role === 'admin' ? 'badge-danger' : 'badge-info'}">
-                        <i class="fas fa-${user.role === 'admin' ? 'user-shield' : 'user'}"></i> ${user.role}
-                    </span></td>
+                    <td>
+                        <span class="badge ${user.role === 'admin' ? 'badge-danger' : 'badge-info'}">
+                            <i class="fas fa-${user.role === 'admin' ? 'user-shield' : 'user'}"></i> ${user.role}
+                        </span>
+                        ${user.is_pro ? '<span class="badge badge-warning" style="margin-left:4px"><i class="fas fa-star"></i> Pro</span>' : ''}
+                    </td>
                     <td><span class="badge ${user.is_active ? 'badge-success' : 'badge-danger'}">
                         <i class="fas fa-${user.is_active ? 'check-circle' : 'times-circle'}"></i> ${user.is_active ? 'Active' : 'Disabled'}
                     </span></td>
@@ -1166,6 +1169,9 @@
                             </button>
                             <button class="btn ${user.is_active ? 'btn-warning' : 'btn-success'}" onclick="toggleUserStatus(${user.id}, ${!user.is_active})">
                                 <i class="fas fa-${user.is_active ? 'lock' : 'unlock'}"></i> ${user.is_active ? 'Khóa' : 'Mở'}
+                            </button>
+                            <button class="btn ${user.is_pro ? 'btn-secondary' : 'btn-warning'}" onclick="togglePro(${user.id}, ${!user.is_pro})" title="${user.is_pro ? 'Hạ về Free' : 'Nâng lên Pro'}">
+                                <i class="fas fa-star"></i> ${user.is_pro ? 'Hạ Free' : 'Nâng Pro'}
                             </button>
                         </div>
                     </td>
@@ -1238,12 +1244,32 @@
                     },
                     body: JSON.stringify({ is_active: newStatus ? 1 : 0 })
                 });
-                
-                if (response.ok) {
-                    loadUsers();
-                }
+                if (response.ok) loadUsers();
             } catch (error) {
                 console.error('Error toggling user status:', error);
+            }
+        }
+
+        async function togglePro(userId, isPro) {
+            const label = isPro ? 'nâng lên Pro' : 'hạ về Free';
+            if (!confirm(`Xác nhận ${label} cho user này?`)) return;
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/set-pro`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ is_pro: isPro })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    loadUsers();
+                } else {
+                    alert('Lỗi: ' + (data.error || 'Không xác định'));
+                }
+            } catch (error) {
+                console.error('Error toggling pro:', error);
             }
         }
 

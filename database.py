@@ -118,6 +118,19 @@ class Database:
             )
         ''')
 
+        # FCM tokens for push notifications
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS fcm_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_fcm_user ON fcm_tokens(user_id)')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_fcm_token ON fcm_tokens(token)')
+
         # Add group_code_id to users (idempotent)
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN group_code_id INTEGER REFERENCES group_codes(id)')
@@ -133,7 +146,17 @@ class Database:
             try:
                 cursor.execute(col_def)
             except Exception:
-                pass  # Column already exists
+                pass
+
+        # Pro plan + SOS count (idempotent)
+        for col_def in [
+            'ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0',
+            'ALTER TABLE users ADD COLUMN sos_count INTEGER DEFAULT 0',
+        ]:
+            try:
+                cursor.execute(col_def)
+            except Exception:
+                pass
 
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_group_codes_code ON group_codes(code)')
         
@@ -786,6 +809,77 @@ class Database:
             return self.get_user_by_id(user_id)
         finally:
             conn.close()
+
+
+    # ── Pro plan ─────────────────────────────────────────────────────────────
+
+    FREE_SOS_LIMIT = 10
+
+    def set_pro(self, user_id: int, is_pro: bool):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET is_pro = ? WHERE id = ?', (1 if is_pro else 0, user_id))
+        conn.commit()
+        conn.close()
+
+    def can_send_sos(self, user_id: int) -> tuple[bool, int, int]:
+        """Returns (allowed, used, limit). limit=-1 means unlimited."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT is_pro, sos_count FROM users WHERE id = ?', (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return False, 0, self.FREE_SOS_LIMIT
+        if row['is_pro']:
+            return True, row['sos_count'], -1
+        used = row['sos_count'] or 0
+        return used < self.FREE_SOS_LIMIT, used, self.FREE_SOS_LIMIT
+
+    def increment_sos_count(self, user_id: int):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET sos_count = COALESCE(sos_count, 0) + 1 WHERE id = ?', (user_id,))
+        conn.commit()
+        conn.close()
+
+    # ── FCM tokens ───────────────────────────────────────────────────────────
+
+    def save_fcm_token(self, user_id: int, token: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT OR REPLACE INTO fcm_tokens (user_id, token, created_at) VALUES (?, ?, ?)',
+            (user_id, token, datetime.now().isoformat())
+        )
+        conn.commit()
+        conn.close()
+
+    def get_fcm_tokens_for_user(self, user_id: int) -> list:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT token FROM fcm_tokens WHERE user_id = ?', (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [r['token'] for r in rows]
+
+    def get_all_admin_fcm_tokens(self) -> list:
+        """All FCM tokens belonging to admin users (for SOS alerts)."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT f.token FROM fcm_tokens f JOIN users u ON f.user_id = u.id WHERE u.role = 'admin'"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [r['token'] for r in rows]
+
+    def delete_fcm_token(self, token: str):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM fcm_tokens WHERE token = ?', (token,))
+        conn.commit()
+        conn.close()
 
 
 # Global database instance

@@ -20,6 +20,7 @@ import config
 from database import db
 from auth import require_auth, require_admin, get_client_ip, get_device_info
 from email_sender import send_verification_otp, send_resend_otp
+from push_service import notify_sos, notify_pro_activated, notify_account_locked, send_push
 import json as json_module
 
 # Setup logging
@@ -1101,48 +1102,96 @@ def admin_get_statistics():
 @require_auth
 def create_sos():
     """
-    Tạo báo cáo SOS
-    
-    Body: {
-        "latitude": 10.123,
-        "longitude": 105.456,
-        "message": "Need help!"
-    }
+    Tạo báo cáo SOS.
+    Free: tối đa 10 lần. Pro: không giới hạn.
+
+    Body: { "latitude": 10.123, "longitude": 105.456, "message": "Need help!" }
     """
     try:
         data = request.get_json()
-        
         latitude = data.get('latitude')
         longitude = data.get('longitude')
         message = data.get('message', '')
-        
+
         if not latitude or not longitude:
+            return jsonify({'success': False, 'error': 'Location coordinates are required'}), 400
+
+        # Check SOS quota
+        allowed, used, limit = db.can_send_sos(request.user_id)
+        if not allowed:
             return jsonify({
                 'success': False,
-                'error': 'Location coordinates are required'
-            }), 400
-        
+                'error': f'Bạn đã dùng hết {limit} lần SOS miễn phí. Nâng cấp Pro để gửi không giới hạn.',
+                'quota_exceeded': True,
+                'sos_used': used,
+                'sos_limit': limit,
+            }), 403
+
         report_id = db.create_sos_report(
             user_id=request.user_id,
             location_lat=latitude,
             location_lon=longitude,
             message=message
         )
-        
+        db.increment_sos_count(request.user_id)
+
+        # Push notification → all admin devices
+        user = db.get_user_by_id(request.user_id)
+        admin_tokens = db.get_all_admin_fcm_tokens()
+        if admin_tokens and user:
+            location_str = f'{latitude:.5f}, {longitude:.5f}'
+            notify_sos(admin_tokens, user.get('full_name', 'Unknown'), location_str, message)
+
+        _, used_now, _ = db.can_send_sos(request.user_id)
+        remaining = (limit - used_now) if limit != -1 else -1
+
         return jsonify({
             'success': True,
             'data': {
                 'report_id': report_id,
-                'message': 'SOS report created successfully'
+                'message': 'SOS report created successfully',
+                'sos_used': used_now,
+                'sos_remaining': remaining,
             }
         }), 201
-        
+
     except Exception as e:
         logger.error(f"Error creating SOS report: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auth/fcm-token', methods=['POST'])
+@require_auth
+def save_fcm_token():
+    """Lưu FCM token cho push notification. Body: { "token": "..." }"""
+    try:
+        data = request.get_json() or {}
+        token = (data.get('token') or '').strip()
+        if not token:
+            return jsonify({'success': False, 'error': 'token là bắt buộc'}), 400
+        db.save_fcm_token(request.user_id, token)
+        return jsonify({'success': True, 'message': 'FCM token saved'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/set-pro', methods=['POST'])
+@require_admin
+def admin_set_pro(user_id):
+    """Nâng/hạ gói Pro cho user. Body: { "is_pro": true|false }"""
+    try:
+        data = request.get_json() or {}
+        is_pro = bool(data.get('is_pro', True))
+        db.set_pro(user_id, is_pro)
+        db.log_activity(request.user_id, 'admin_set_pro',
+                        {'target_user_id': user_id, 'is_pro': is_pro}, get_client_ip())
+        # Notify user via push
+        user_tokens = db.get_fcm_tokens_for_user(user_id)
+        if is_pro and user_tokens:
+            notify_pro_activated(user_tokens)
+        return jsonify({'success': True, 'message': f'User {"nâng lên Pro" if is_pro else "hạ về Free"} thành công'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/admin/sos', methods=['GET'])

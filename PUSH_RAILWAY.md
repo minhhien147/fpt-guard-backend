@@ -33,11 +33,18 @@ git commit -m "Backend: auto logout khi admin khóa tài khoản (403 Account di
 
 ### Bước 4: Push lên GitHub
 
-```bash
-git push origin main
-```
-
-*(Nếu nhánh của bạn là `master`: `git push origin master`)*
+- **Nếu nhánh của bạn là `main`:**
+  ```bash
+  git push origin main
+  ```
+- **Nếu nhánh của bạn là `master`** (thường gặp):
+  ```bash
+  git push origin master
+  ```
+  Hoặc push `master` lên nhánh `main` trên GitHub:
+  ```bash
+  git push origin master:main
+  ```
 
 ### Bước 5: Railway tự deploy
 
@@ -61,6 +68,113 @@ git push origin main
 
 ---
 
+## ⚠️ Deploy mới có mất user không?
+
+Backend dùng **SQLite**, file database: `data/users.db`.
+
+| Trường hợp | Kết quả |
+|------------|--------|
+| **Chưa cấu hình Volume** | Mỗi lần deploy = container mới → file `data/users.db` mất → **mất hết user cũ**. |
+| **Đã gắn Volume cho thư mục `data`** | Database nằm trên Volume → **user và dữ liệu được giữ** khi deploy. |
+
+### Cách giữ user khi deploy (Railway Volume)
+
+1. Vào **Railway Dashboard** → chọn project backend.
+2. Chọn **Service** (backend của bạn).
+3. Tab **Variables** hoặc **Settings** → tìm **Volumes** (hoặc **Data**).
+4. **Add Volume** (hoặc **Mount**):
+   - **Mount Path:** `data` (hoặc `/app/data` tùy Railway).
+   - Lưu ý: thư mục `data/` trong code phải trùng với mount path (app đang dùng `data/users.db`).
+5. **Redeploy** một lần để Volume được gắn.
+
+Sau khi Volume đã gắn, mọi lần push/deploy mới **sẽ không mất user** (database nằm trên Volume).
+
+### Nếu đã deploy và mất user rồi
+
+- Vào **Admin** (hoặc trang **Register** nếu có): tạo lại tài khoản admin.
+- Hoặc dùng script/API tạo user admin (xem README/GETTING_STARTED_BACKEND).
+- Sau đó **bật Volume** như trên để lần sau không mất nữa.
+
+---
+
+## 📦 Backup ở đâu?
+
+**Railway không có nút "Backup" sẵn** cho SQLite. Bạn có thể backup như sau:
+
+### 1. Tải file database qua API (khuyến nghị)
+
+Backend có endpoint **chỉ Admin** dùng để tải file database:
+
+- **URL:** `GET https://web-production-dd806.up.railway.app/api/admin/backup`
+- **Header:** `Authorization: Bearer <token_admin>`
+- **Cách lấy token:** Đăng nhập Admin → dùng token trong session (hoặc gọi API login lấy token).
+
+**Ví dụ (trình duyệt):** Đăng nhập xong vào Admin, mở DevTools (F12) → Application/Storage xem token, rồi mở tab mới:
+
+```
+https://web-production-dd806.up.railway.app/api/admin/backup
+```
+
+(Kèm header `Authorization: Bearer <token>` — hoặc dùng Postman/curl với token.)
+
+**Ví dụ (curl):**
+```bash
+curl -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -o users_backup.db \
+  "https://web-production-dd806.up.railway.app/api/admin/backup"
+```
+
+File tải về là bản copy `users.db` (user, session, SOS reports). Lưu file này định kỳ (máy tính, Google Drive, v.v.) là đã backup.
+
+### 2. Railway Volume (giữ data khi deploy)
+
+- Trong Railway: **Architecture** → chọn service **back-end** → **Variables** hoặc **Settings** → **Volumes**.
+- Thêm Volume, mount path: `data` (hoặc `/app/data` tùy cấu hình).
+- Volume **không thay thế backup**: nếu Volume lỗi hoặc project bị xóa vẫn mất data. Nên vẫn **tải backup qua API** định kỳ.
+
+### 3. Nơi lưu file backup
+
+- Máy tính: lưu file `.db` vào thư mục an toàn.
+- Google Drive / OneDrive: upload file backup định kỳ.
+- Không lưu token admin hoặc file backup lên repo/public.
+
+---
+
+## 🔓 Khóa nhầm nick Admin
+
+Nếu bạn khóa nhầm tài khoản admin và không đăng nhập được ("Account is disabled"):
+
+### Bước 1: Cấu hình mã khôi phục trên Railway
+
+1. Vào **Railway** → project **back-end** → tab **Variables**.
+2. Thêm biến môi trường:
+   - **ADMIN_RECOVERY_KEY** = một chuỗi bí mật bạn tự đặt (ví dụ: `MySecretRecovery2024`).
+3. (Tùy chọn) Nếu email admin không phải `admin@fptguard.com`, thêm:
+   - **ADMIN_EMAIL** = email tài khoản admin cần mở khóa.
+4. Lưu → Railway sẽ redeploy (hoặc redeploy thủ công).
+
+### Bước 2: Gọi API mở khóa
+
+Dùng Postman, curl hoặc trình duyệt (cần gửi POST):
+
+```bash
+curl -X POST "https://web-production-dd806.up.railway.app/api/recover-admin" \
+  -H "Content-Type: application/json" \
+  -d "{\"recovery_key\": \"MySecretRecovery2024\"}"
+```
+
+*(Thay `MySecretRecovery2024` bằng giá trị **ADMIN_RECOVERY_KEY** bạn đã set.)*
+
+Nếu thành công, response: `"message": "Admin account has been unlocked. You can log in again."`
+
+### Bước 3: Đăng nhập lại
+
+Vào https://web-production-dd806.up.railway.app/admin và đăng nhập bằng email + password admin như bình thường.
+
+**Lưu ý:** Sau khi mở khóa xong, có thể xóa biến **ADMIN_RECOVERY_KEY** trên Railway (hoặc đổi sang chuỗi khác) để tránh lộ.
+
+---
+
 ## Kiểm tra sau khi push
 
 1. **Health check**
@@ -78,8 +192,9 @@ git push origin main
 
 | Lỗi | Cách xử lý |
 |-----|------------|
+| `src refspec main does not match any` | Bạn đang ở nhánh `master`. Dùng `git push origin master` hoặc `git push origin master:main`. |
 | `git push` bị từ chối | Kiểm tra đã đăng nhập GitHub (`git config user.name/user.email`), hoặc dùng SSH key / Personal Access Token. |
-| Railway không tự deploy | Vào Railway → Project → **Settings** → kiểm tra **Connected Repo** và **Branch** (thường là `main`). |
+| Railway không tự deploy | Vào Railway → Project → **Settings** → kiểm tra **Connected Repo** và **Branch** (`main` hoặc `master`). |
 | Deploy fail trên Railway | Xem **Deployments** → **View Logs**; thường do thiếu dependency trong `requirements.txt` hoặc lỗi Python. |
 
 ---
