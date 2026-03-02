@@ -1156,7 +1156,14 @@
                         <span class="badge ${user.role === 'admin' ? 'badge-danger' : 'badge-info'}">
                             <i class="fas fa-${user.role === 'admin' ? 'user-shield' : 'user'}"></i> ${user.role}
                         </span>
-                        ${user.is_pro ? `<span class="badge badge-warning" style="margin-left:4px" title="${user.pro_expires_at ? 'Hết hạn: ' + user.pro_expires_at.slice(0,10) : 'Không hết hạn'}"><i class="fas fa-star"></i> Pro${user.pro_expires_at ? ' · ' + user.pro_expires_at.slice(0,10) : ''}</span>` : ''}
+                        ${user.is_pro ? (() => {
+                            if (!user.pro_expires_at) return '<span class="badge badge-warning" style="margin-left:4px"><i class="fas fa-star"></i> Pro ∞</span>';
+                            const exp = new Date(user.pro_expires_at);
+                            const now = new Date();
+                            const daysLeft = Math.ceil((exp - now) / (1000*60*60*24));
+                            const color = daysLeft <= 7 ? '#e53e3e' : daysLeft <= 14 ? '#dd6b20' : '#d69e2e';
+                            return `<span class="badge badge-warning" style="margin-left:4px;background:${color}" title="Hết hạn: ${user.pro_expires_at.slice(0,10)}"><i class="fas fa-star"></i> Pro · còn ${daysLeft} ngày</span>`;
+                        })() : ''}
                     </td>
                     <td><span class="badge ${user.is_active ? 'badge-success' : 'badge-danger'}">
                         <i class="fas fa-${user.is_active ? 'check-circle' : 'times-circle'}"></i> ${user.is_active ? 'Active' : 'Disabled'}

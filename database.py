@@ -317,14 +317,16 @@ class Database:
         
         if role:
             cursor.execute('''
-                SELECT id, full_name, student_id, phone, email, role, is_active, created_at, last_login
+                SELECT id, full_name, student_id, phone, email, role, is_active,
+                       is_pro, pro_expires_at, sos_count, created_at, last_login
                 FROM users WHERE role = ?
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
             ''', (role, limit, offset))
         else:
             cursor.execute('''
-                SELECT id, full_name, student_id, phone, email, role, is_active, created_at, last_login
+                SELECT id, full_name, student_id, phone, email, role, is_active,
+                       is_pro, pro_expires_at, sos_count, created_at, last_login
                 FROM users
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
