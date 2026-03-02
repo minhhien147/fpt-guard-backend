@@ -246,6 +246,16 @@ class DataUpdateScheduler:
             replace_existing=True,
         )
 
+        # Reset SOS count tài khoản Free vào ngày 1 mỗi tháng lúc 00:01
+        self.scheduler.add_job(
+            func=self._reset_free_sos,
+            trigger='cron',
+            day=1, hour=0, minute=1,
+            id='reset_free_sos',
+            name='Reset SOS count Free users hàng tháng',
+            replace_existing=True,
+        )
+
         # Crawl RSS tin tức an ninh mỗi 30 phút
         self.scheduler.add_job(
             func=self.fetch_rss_news,
@@ -264,6 +274,15 @@ class DataUpdateScheduler:
         logger.info(f"  → Dữ liệu lưu tại: {config.DATA_DIR}")
         logger.info(f"{'='*60}\n")
     
+    def _reset_free_sos(self):
+        """Reset sos_count = 0 cho tất cả tài khoản Free vào đầu tháng."""
+        try:
+            from database import db
+            count = db.reset_free_sos_counts()
+            logger.info(f'✓ Reset SOS count cho {count} tài khoản Free')
+        except Exception as e:
+            logger.error(f'reset_free_sos error: {e}')
+
     def _check_pro_expiry(self):
         """Hạ tất cả tài khoản Pro đã hết hạn về Free và gửi email thông báo."""
         try:

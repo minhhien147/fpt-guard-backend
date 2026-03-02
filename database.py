@@ -172,6 +172,7 @@ class Database:
             'ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0',
             'ALTER TABLE users ADD COLUMN sos_count INTEGER DEFAULT 0',
             'ALTER TABLE users ADD COLUMN pro_expires_at TEXT',
+            'ALTER TABLE users ADD COLUMN sos_reset_at TEXT',
         ]:
             try:
                 cursor.execute(col_def)
@@ -884,25 +885,75 @@ class Database:
         return expired
 
     def can_send_sos(self, user_id: int) -> tuple[bool, int, int]:
-        """Returns (allowed, used, limit). limit=-1 means unlimited."""
+        """Returns (allowed, used, limit). limit=-1 means unlimited (Pro).
+        Free users get FREE_SOS_LIMIT per calendar month; count auto-resets.
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT is_pro, sos_count FROM users WHERE id = ?', (user_id,))
+        cursor.execute(
+            'SELECT is_pro, sos_count, sos_reset_at FROM users WHERE id = ?',
+            (user_id,)
+        )
         row = cursor.fetchone()
-        conn.close()
         if not row:
+            conn.close()
             return False, 0, self.FREE_SOS_LIMIT
+
         if row['is_pro']:
-            return True, row['sos_count'], -1
+            conn.close()
+            return True, row['sos_count'] or 0, -1
+
+        now = datetime.now()
+        reset_at = row['sos_reset_at']
+        needs_reset = False
+        if reset_at:
+            try:
+                last_reset = datetime.fromisoformat(reset_at)
+                if last_reset.year != now.year or last_reset.month != now.month:
+                    needs_reset = True
+            except Exception:
+                needs_reset = True
+        else:
+            # First time — initialise reset timestamp without touching sos_count
+            needs_reset = True
+
+        if needs_reset:
+            cursor.execute(
+                'UPDATE users SET sos_count = 0, sos_reset_at = ? WHERE id = ?',
+                (now.isoformat(), user_id)
+            )
+            conn.commit()
+            conn.close()
+            return True, 0, self.FREE_SOS_LIMIT
+
+        conn.close()
         used = row['sos_count'] or 0
         return used < self.FREE_SOS_LIMIT, used, self.FREE_SOS_LIMIT
 
     def increment_sos_count(self, user_id: int):
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE users SET sos_count = COALESCE(sos_count, 0) + 1 WHERE id = ?', (user_id,))
+        cursor.execute(
+            'UPDATE users SET sos_count = COALESCE(sos_count, 0) + 1 WHERE id = ?',
+            (user_id,)
+        )
         conn.commit()
         conn.close()
+
+    def reset_free_sos_counts(self) -> int:
+        """Reset sos_count = 0 cho tất cả tài khoản Free vào đầu tháng.
+        Trả về số lượng user được reset."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute(
+            "UPDATE users SET sos_count = 0, sos_reset_at = ? WHERE is_pro = 0",
+            (now,)
+        )
+        count = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return count
 
     # ── FCM tokens ───────────────────────────────────────────────────────────
 
