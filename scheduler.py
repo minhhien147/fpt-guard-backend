@@ -194,7 +194,17 @@ class DataUpdateScheduler:
             name='Cập nhật mực nước từ MRC',
             replace_existing=True
         )
-        
+
+        # Kiểm tra Pro hết hạn mỗi ngày lúc 00:05
+        self.scheduler.add_job(
+            func=self._check_pro_expiry,
+            trigger='cron',
+            hour=0, minute=5,
+            id='check_pro_expiry',
+            name='Hạ Pro hết hạn về Free',
+            replace_existing=True,
+        )
+
         self.scheduler.start()
         self.is_running = True
         
@@ -204,6 +214,21 @@ class DataUpdateScheduler:
         logger.info(f"  → Dữ liệu lưu tại: {config.DATA_DIR}")
         logger.info(f"{'='*60}\n")
     
+    def _check_pro_expiry(self):
+        """Hạ tất cả tài khoản Pro đã hết hạn về Free và gửi email thông báo."""
+        try:
+            from database import db
+            from email_sender import send_pro_expired
+            expired_users = db.expire_pro_accounts()
+            for u in expired_users:
+                logger.info(f'Pro expired → downgraded: {u["email"]}')
+                if u.get('email'):
+                    send_pro_expired(u['email'], u['full_name'])
+            if expired_users:
+                logger.info(f'✓ Đã hạ {len(expired_users)} tài khoản Pro hết hạn về Free')
+        except Exception as e:
+            logger.error(f'check_pro_expiry error: {e}')
+
     def stop(self):
         """
         Dừng scheduler

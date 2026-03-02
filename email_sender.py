@@ -77,6 +77,83 @@ def _otp_html(full_name: str, otp: str, is_resend: bool = False) -> str:
     </div>"""
 
 
+def send_pro_activated(to_email: str, full_name: str, expires_at: str) -> tuple[bool, str]:
+    """Gửi email thông báo tài khoản được nâng lên Pro."""
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(expires_at)
+        expires_str = dt.strftime('%d/%m/%Y')
+    except Exception:
+        expires_str = expires_at
+
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#f4f7fb;padding:32px 16px;">
+      <div style="background:#03045E;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+        <h1 style="color:#fff;font-size:24px;margin:0;letter-spacing:3px;">SAFE GUARD</h1>
+        <p style="color:#90E0EF;margin:8px 0 0;font-size:14px;">Thông báo nâng cấp tài khoản</p>
+      </div>
+      <div style="background:#fff;border-radius:0 0 16px 16px;padding:36px 32px;">
+        <p style="color:#2d3748;font-size:15px;">Xin chào <strong>{full_name}</strong>,</p>
+        <p style="color:#4a5568;font-size:14px;line-height:1.6;">
+          Tài khoản của bạn đã được <strong>nâng cấp lên gói Pro</strong> bởi quản trị viên.
+        </p>
+        <div style="text-align:center;margin:28px 0;">
+          <div style="display:inline-block;background:#03045E;color:#CAF0F8;
+                      font-size:18px;font-weight:bold;padding:16px 32px;border-radius:12px;">
+            ⭐ TÀI KHOẢN PRO
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+          <tr>
+            <td style="padding:10px;background:#f7fafc;border-radius:8px;color:#4a5568;font-size:14px;">✅ SOS không giới hạn</td>
+          </tr>
+          <tr><td style="height:6px"></td></tr>
+          <tr>
+            <td style="padding:10px;background:#f7fafc;border-radius:8px;color:#4a5568;font-size:14px;">✅ Chạy nền bảo vệ 24/7</td>
+          </tr>
+          <tr><td style="height:6px"></td></tr>
+          <tr>
+            <td style="padding:10px;background:#f7fafc;border-radius:8px;color:#4a5568;font-size:14px;">✅ Danh bạ không giới hạn</td>
+          </tr>
+        </table>
+        <p style="color:#718096;font-size:13px;text-align:center;">
+          Gói Pro có hiệu lực đến hết ngày <strong>{expires_str}</strong>.<br>
+          Sau ngày này, tài khoản sẽ tự động chuyển về gói Free.
+        </p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;">
+        <p style="color:#a0aec0;font-size:12px;text-align:center;">
+          © 2024 SAFE GUARD – FPT University Cần Thơ
+        </p>
+      </div>
+    </div>"""
+    return _send(to_email, '[SAFE GUARD] Tài khoản của bạn đã được nâng cấp lên Pro ⭐', html)
+
+
+def send_pro_expired(to_email: str, full_name: str) -> tuple[bool, str]:
+    """Gửi email thông báo tài khoản Pro đã hết hạn."""
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#f4f7fb;padding:32px 16px;">
+      <div style="background:#03045E;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+        <h1 style="color:#fff;font-size:24px;margin:0;letter-spacing:3px;">SAFE GUARD</h1>
+        <p style="color:#90E0EF;margin:8px 0 0;font-size:14px;">Thông báo hết hạn gói Pro</p>
+      </div>
+      <div style="background:#fff;border-radius:0 0 16px 16px;padding:36px 32px;">
+        <p style="color:#2d3748;font-size:15px;">Xin chào <strong>{full_name}</strong>,</p>
+        <p style="color:#4a5568;font-size:14px;line-height:1.6;">
+          Gói <strong>Pro</strong> của bạn đã hết hạn. Tài khoản đã được chuyển về gói <strong>Free</strong>.
+        </p>
+        <p style="color:#4a5568;font-size:14px;line-height:1.6;">
+          Vui lòng liên hệ quản trị viên để gia hạn nếu cần.
+        </p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;">
+        <p style="color:#a0aec0;font-size:12px;text-align:center;">
+          © 2024 SAFE GUARD – FPT University Cần Thơ
+        </p>
+      </div>
+    </div>"""
+    return _send(to_email, '[SAFE GUARD] Gói Pro của bạn đã hết hạn', html)
+
+
 def send_verification_otp(to_email: str, full_name: str, otp: str) -> tuple[bool, str]:
     return _send(to_email, f'[SAFE GUARD] Mã xác thực email: {otp}',
                  _otp_html(full_name, otp, is_resend=False))

@@ -6,7 +6,7 @@ import os
 import sqlite3
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # noqa: F401
 from pathlib import Path
 import json
 
@@ -154,13 +154,14 @@ class Database:
         for col_def in [
             'ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0',
             'ALTER TABLE users ADD COLUMN sos_count INTEGER DEFAULT 0',
+            'ALTER TABLE users ADD COLUMN pro_expires_at TEXT',
         ]:
             try:
                 cursor.execute(col_def)
             except Exception:
                 pass
 
-        # Upgrade existing group_members to Pro (migration)
+        # Upgrade existing group_members to Pro (migration, no expiry)
         cursor.execute(
             "UPDATE users SET is_pro = 1 WHERE role = 'group_member' AND is_pro = 0"
         )
@@ -822,12 +823,46 @@ class Database:
 
     FREE_SOS_LIMIT = 10
 
-    def set_pro(self, user_id: int, is_pro: bool):
+    def set_pro(self, user_id: int, is_pro: bool, months: int = 1):
+        """Nâng/hạ Pro. Nếu is_pro=True thì set pro_expires_at = now + months tháng.
+        group_member không có expiry (pro_expires_at = NULL).
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE users SET is_pro = ? WHERE id = ?', (1 if is_pro else 0, user_id))
+        if is_pro:
+            expires_at = (datetime.now() + timedelta(days=30 * months)).isoformat()
+            cursor.execute(
+                'UPDATE users SET is_pro = 1, pro_expires_at = ? WHERE id = ?',
+                (expires_at, user_id)
+            )
+        else:
+            cursor.execute(
+                'UPDATE users SET is_pro = 0, pro_expires_at = NULL WHERE id = ?',
+                (user_id,)
+            )
         conn.commit()
         conn.close()
+
+    def expire_pro_accounts(self) -> list:
+        """Hạ tất cả tài khoản Pro đã hết hạn về Free. Trả về list user bị hạ."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        now = datetime.now().isoformat()
+        cursor.execute(
+            '''SELECT id, full_name, email FROM users
+               WHERE is_pro = 1 AND pro_expires_at IS NOT NULL AND pro_expires_at <= ?''',
+            (now,)
+        )
+        expired = [dict(r) for r in cursor.fetchall()]
+        if expired:
+            ids = [u['id'] for u in expired]
+            cursor.execute(
+                f"UPDATE users SET is_pro = 0, pro_expires_at = NULL WHERE id IN ({','.join('?'*len(ids))})",
+                ids
+            )
+            conn.commit()
+        conn.close()
+        return expired
 
     def can_send_sos(self, user_id: int) -> tuple[bool, int, int]:
         """Returns (allowed, used, limit). limit=-1 means unlimited."""

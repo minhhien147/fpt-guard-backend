@@ -19,7 +19,7 @@ from data_processor import WaterLevelProcessor
 import config
 from database import db
 from auth import require_auth, require_admin, get_client_ip, get_device_info
-from email_sender import send_verification_otp, send_resend_otp
+from email_sender import send_verification_otp, send_resend_otp, send_pro_activated, send_pro_expired
 from push_service import notify_sos, notify_pro_activated, notify_account_locked, send_push
 import json as json_module
 
@@ -1178,19 +1178,47 @@ def save_fcm_token():
 @app.route('/api/admin/users/<int:user_id>/set-pro', methods=['POST'])
 @require_admin
 def admin_set_pro(user_id):
-    """Nâng/hạ gói Pro cho user. Body: { "is_pro": true|false }"""
+    """Nâng/hạ gói Pro cho user (chỉ áp dụng role=user, không áp dụng group_member).
+    Body: { "is_pro": true|false, "months": 1 }
+    """
     try:
         data = request.get_json() or {}
         is_pro = bool(data.get('is_pro', True))
-        db.set_pro(user_id, is_pro)
+        months = int(data.get('months', 1))
+
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'Không tìm thấy user'}), 404
+
+        db.set_pro(user_id, is_pro, months=months)
         db.log_activity(request.user_id, 'admin_set_pro',
-                        {'target_user_id': user_id, 'is_pro': is_pro}, get_client_ip())
-        # Notify user via push
-        user_tokens = db.get_fcm_tokens_for_user(user_id)
-        if is_pro and user_tokens:
-            notify_pro_activated(user_tokens)
-        return jsonify({'success': True, 'message': f'User {"nâng lên Pro" if is_pro else "hạ về Free"} thành công'})
+                        {'target_user_id': user_id, 'is_pro': is_pro, 'months': months},
+                        get_client_ip())
+
+        if is_pro:
+            # Lấy pro_expires_at vừa set
+            updated_user = db.get_user_by_id(user_id)
+            expires_at = updated_user.get('pro_expires_at', '')
+
+            # Gửi email thông báo (chỉ user thường, không phải group_member)
+            if user.get('role') != 'group_member' and user.get('email'):
+                send_pro_activated(user['email'], user['full_name'], expires_at)
+
+            # Push notification
+            user_tokens = db.get_fcm_tokens_for_user(user_id)
+            if user_tokens:
+                notify_pro_activated(user_tokens)
+
+            return jsonify({
+                'success': True,
+                'message': f'Đã nâng Pro cho {user["full_name"]} đến {expires_at[:10]}',
+                'pro_expires_at': expires_at,
+            })
+        else:
+            return jsonify({'success': True, 'message': f'Đã hạ {user["full_name"]} về Free'})
+
     except Exception as e:
+        logger.error(f'admin_set_pro error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
