@@ -104,6 +104,10 @@ def home():
             },
             "tracking": {
                 "/api/activity/track": "Theo dõi hoạt động user (POST, requires auth)"
+            },
+            "news": {
+                "/api/news": "Tin tức an ninh từ RSS (GET, ?limit=20&offset=0&category=...)",
+                "/api/admin/news/refresh": "Crawl RSS ngay lập tức (POST, admin only)"
             }
         },
         "default_admin": {
@@ -1339,6 +1343,59 @@ def track_activity():
 # ERROR HANDLERS
 # ============================================================================
 
+# ============================================================================
+# NEWS ENDPOINTS
+# ============================================================================
+
+@app.route('/api/news', methods=['GET'])
+def get_news():
+    """
+    Lấy danh sách tin tức an ninh từ RSS (có phân trang + lọc danh mục).
+    Query params:
+      - limit  (int, default 20)
+      - offset (int, default 0)
+      - category (str, optional – 'Tất cả' or specific category)
+    """
+    try:
+        limit = min(int(request.args.get('limit', 20)), 50)
+        offset = int(request.args.get('offset', 0))
+        category = request.args.get('category', None)
+
+        articles, total = db.get_news(limit=limit, offset=offset, category=category)
+        categories = db.get_news_categories()
+
+        # If DB is empty, trigger a background crawl (non-blocking)
+        if total == 0:
+            import threading
+            t = threading.Thread(target=scheduler.fetch_rss_news, daemon=True)
+            t.start()
+
+        return jsonify({
+            "success": True,
+            "news": articles,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "categories": categories,
+        })
+    except Exception as e:
+        logger.error(f'get_news error: {e}', exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/admin/news/refresh', methods=['POST'])
+@require_admin
+def admin_refresh_news():
+    """Kích hoạt crawl RSS ngay lập tức (admin only)."""
+    try:
+        scheduler.fetch_rss_news()
+        _, total = db.get_news(limit=1, offset=0)
+        return jsonify({"success": True, "message": f"Đã cập nhật tin tức. Tổng: {total} bài."})
+    except Exception as e:
+        logger.error(f'admin_refresh_news error: {e}', exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({
@@ -1375,6 +1432,28 @@ def main():
     logger.info("\nScheduler: DISABLED (Railway không hỗ trợ Chrome/Selenium)")
     logger.info("  → Dữ liệu có thể load từ file tĩnh hoặc cập nhật manual qua /api/admin/update")
     # scheduler.start(immediate=False)  # Tạm disable trên Railway
+
+    # Khởi động RSS news scheduler (không cần Chrome, chỉ cần HTTP)
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler as _BGS
+        from apscheduler.triggers.interval import IntervalTrigger as _IT
+        import pytz as _pytz
+        _news_scheduler = _BGS(timezone=_pytz.timezone(config.TIMEZONE))
+        _news_scheduler.add_job(
+            func=scheduler.fetch_rss_news,
+            trigger=_IT(minutes=30),
+            id='rss_news',
+            name='RSS News Crawler',
+            replace_existing=True,
+        )
+        _news_scheduler.start()
+        logger.info("✓ RSS News scheduler đã khởi động (mỗi 30 phút)")
+        # Crawl ngay lần đầu trong thread riêng (không block startup)
+        import threading
+        threading.Thread(target=scheduler.fetch_rss_news, daemon=True).start()
+        logger.info("  → Đang crawl RSS lần đầu ở background...")
+    except Exception as _e:
+        logger.warning(f"RSS scheduler khởi động thất bại: {_e}")
     
     # Lấy port từ environment variable (cho cloud platforms) hoặc dùng config
     port = int(os.environ.get('PORT', config.API_PORT))

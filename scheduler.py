@@ -8,9 +8,11 @@ import json
 import logging
 import time
 import csv
+import re
 from datetime import datetime
 from typing import Dict
 from pathlib import Path
+from email.utils import parsedate_to_datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -19,6 +21,43 @@ import pytz
 from mrc_scraper import MRCWaterLevelScraper
 from data_processor import WaterLevelProcessor
 import config
+
+# feedparser và requests được import lazy bên trong fetch_rss_news
+# để tránh crash app nếu package chưa được cài.
+
+# ── RSS news sources ──────────────────────────────────────────────────────────
+RSS_FEEDS = [
+    {
+        "url": "https://vnexpress.net/rss/phap-luat.rss",
+        "source": "VnExpress",
+        "category": "Pháp luật",
+    },
+    {
+        "url": "https://vnexpress.net/rss/thoi-su.rss",
+        "source": "VnExpress",
+        "category": "Thời sự",
+    },
+    {
+        "url": "https://tuoitre.vn/rss/phap-luat.rss",
+        "source": "Tuổi Trẻ",
+        "category": "Pháp luật",
+    },
+    {
+        "url": "https://tuoitre.vn/rss/thoi-su.rss",
+        "source": "Tuổi Trẻ",
+        "category": "Thời sự",
+    },
+    {
+        "url": "https://dantri.com.vn/phap-luat.rss",
+        "source": "Dân Trí",
+        "category": "Pháp luật",
+    },
+    {
+        "url": "https://cand.com.vn/rss/an-ninh-trat-tu.rss",
+        "source": "Báo Công an",
+        "category": "An ninh",
+    },
+]
 
 # Setup logging
 logging.basicConfig(
@@ -183,6 +222,8 @@ class DataUpdateScheduler:
         if immediate:
             logger.info("\nChạy cập nhật dữ liệu ban đầu...")
             self.update_data()
+            logger.info("\nCrawl RSS tin tức ban đầu...")
+            self.fetch_rss_news()
         
         # Thiết lập job định kỳ
         interval_minutes = config.UPDATE_INTERVAL // 60
@@ -202,6 +243,15 @@ class DataUpdateScheduler:
             hour=0, minute=5,
             id='check_pro_expiry',
             name='Hạ Pro hết hạn về Free',
+            replace_existing=True,
+        )
+
+        # Crawl RSS tin tức an ninh mỗi 30 phút
+        self.scheduler.add_job(
+            func=self.fetch_rss_news,
+            trigger=IntervalTrigger(minutes=30),
+            id='fetch_rss_news',
+            name='Crawl RSS tin tức an ninh',
             replace_existing=True,
         )
 
@@ -228,6 +278,106 @@ class DataUpdateScheduler:
                 logger.info(f'✓ Đã hạ {len(expired_users)} tài khoản Pro hết hạn về Free')
         except Exception as e:
             logger.error(f'check_pro_expiry error: {e}')
+
+    # ── RSS News ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_image(entry) -> str | None:
+        """Try to get a thumbnail/image URL from a feedparser entry."""
+        # media:thumbnail or media:content
+        if hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+            return entry.media_thumbnail[0].get('url')
+        if hasattr(entry, 'media_content') and entry.media_content:
+            for m in entry.media_content:
+                if m.get('url'):
+                    return m['url']
+        # enclosures (podcasts / image attachments)
+        for enc in getattr(entry, 'enclosures', []):
+            if enc.get('type', '').startswith('image'):
+                return enc.get('href') or enc.get('url')
+        # og:image or first <img> inside summary/content
+        html = ''
+        if hasattr(entry, 'content') and entry.content:
+            html = entry.content[0].get('value', '')
+        elif hasattr(entry, 'summary'):
+            html = entry.summary or ''
+        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html)
+        if m:
+            return m.group(1)
+        return None
+
+    @staticmethod
+    def _parse_published(entry) -> str:
+        """Return ISO-8601 published string from a feedparser entry."""
+        # feedparser already normalises to published_parsed (struct_time UTC)
+        if hasattr(entry, 'published_parsed') and entry.published_parsed:
+            try:
+                return datetime(*entry.published_parsed[:6],
+                                tzinfo=pytz.utc).isoformat()
+            except Exception:
+                pass
+        if hasattr(entry, 'published') and entry.published:
+            try:
+                return parsedate_to_datetime(entry.published).isoformat()
+            except Exception:
+                return entry.published
+        return datetime.now(pytz.utc).isoformat()
+
+    @staticmethod
+    def _strip_html(text: str) -> str:
+        return re.sub(r'<[^>]+>', '', text or '').strip()
+
+    def fetch_rss_news(self):
+        """Crawl tất cả RSS feeds, lưu bài mới vào DB."""
+        try:
+            import requests
+            import feedparser
+            from database import db
+            logger.info("── Crawl RSS news ──")
+            total_inserted = 0
+            headers = {'User-Agent': 'Mozilla/5.0 (FPTGuard RSS Reader)'}
+
+            for feed_cfg in RSS_FEEDS:
+                url = feed_cfg['url']
+                try:
+                    resp = requests.get(url, headers=headers, timeout=15)
+                    resp.raise_for_status()
+                    feed = feedparser.parse(resp.content)
+                    articles = []
+                    for entry in feed.entries[:30]:
+                        title = self._strip_html(getattr(entry, 'title', ''))
+                        if not title:
+                            continue
+                        description = self._strip_html(
+                            getattr(entry, 'summary', '') or
+                            (entry.content[0].get('value', '') if hasattr(entry, 'content') and entry.content else '')
+                        )
+                        link = getattr(entry, 'link', '')
+                        if not link:
+                            continue
+                        articles.append({
+                            'title': title,
+                            'description': description[:500],
+                            'link': link,
+                            'published': self._parse_published(entry),
+                            'source': feed_cfg['source'],
+                            'category': feed_cfg['category'],
+                            'image': self._extract_image(entry),
+                        })
+                    n = db.save_news_articles(articles)
+                    total_inserted += n
+                    logger.info(f"  [{feed_cfg['source']}] {feed_cfg['category']}: +{n} bài mới")
+                except Exception as e:
+                    logger.warning(f"  Lỗi fetch {url}: {e}")
+
+            # Dọn tin cũ hơn 30 ngày
+            deleted = db.cleanup_old_news(days=30)
+            if deleted:
+                logger.info(f"  Đã xóa {deleted} bài cũ > 30 ngày")
+
+            logger.info(f"✓ RSS crawl hoàn tất: +{total_inserted} bài mới")
+        except Exception as e:
+            logger.error(f'fetch_rss_news error: {e}', exc_info=True)
 
     def stop(self):
         """

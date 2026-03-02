@@ -133,6 +133,23 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_fcm_user ON fcm_tokens(user_id)')
         cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_fcm_token ON fcm_tokens(token)')
 
+        # News articles (RSS crawled)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS news (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                link TEXT UNIQUE NOT NULL,
+                published TEXT,
+                source TEXT,
+                category TEXT,
+                image TEXT,
+                fetched_at TEXT NOT NULL
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)')
+
         # Add group_code_id to users (idempotent)
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN group_code_id INTEGER REFERENCES group_codes(id)')
@@ -924,6 +941,84 @@ class Database:
         cursor.execute('DELETE FROM fcm_tokens WHERE token = ?', (token,))
         conn.commit()
         conn.close()
+
+    # ── News (RSS) ────────────────────────────────────────────────────────────
+
+    def save_news_articles(self, articles: list) -> int:
+        """Bulk-insert news articles, skipping duplicates by link. Returns count inserted."""
+        if not articles:
+            return 0
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        inserted = 0
+        for a in articles:
+            try:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO news
+                        (title, description, link, published, source, category, image, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    a.get('title', ''),
+                    a.get('description', ''),
+                    a.get('link', ''),
+                    a.get('published', ''),
+                    a.get('source', ''),
+                    a.get('category', ''),
+                    a.get('image'),
+                    datetime.now().isoformat(),
+                ))
+                if cursor.rowcount:
+                    inserted += 1
+            except Exception:
+                pass
+        conn.commit()
+        conn.close()
+        return inserted
+
+    def get_news(self, limit: int = 20, offset: int = 0, category: str = None) -> tuple:
+        """Return (list_of_articles, total_count) ordered by published desc."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        if category and category != 'Tất cả':
+            cursor.execute(
+                'SELECT * FROM news WHERE category = ? ORDER BY published DESC, fetched_at DESC LIMIT ? OFFSET ?',
+                (category, limit, offset)
+            )
+            cursor2 = conn.cursor()
+            cursor2.execute('SELECT COUNT(*) as cnt FROM news WHERE category = ?', (category,))
+        else:
+            cursor.execute(
+                'SELECT * FROM news ORDER BY published DESC, fetched_at DESC LIMIT ? OFFSET ?',
+                (limit, offset)
+            )
+            cursor2 = conn.cursor()
+            cursor2.execute('SELECT COUNT(*) as cnt FROM news')
+        articles = [dict(r) for r in cursor.fetchall()]
+        total = cursor2.fetchone()['cnt']
+        conn.close()
+        return articles, total
+
+    def get_news_categories(self) -> list:
+        """Return distinct category values that have at least one article."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT DISTINCT category FROM news WHERE category IS NOT NULL AND category != "" ORDER BY category'
+        )
+        cats = [r['category'] for r in cursor.fetchall()]
+        conn.close()
+        return cats
+
+    def cleanup_old_news(self, days: int = 30) -> int:
+        """Delete articles older than `days` days. Returns count deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cursor.execute('DELETE FROM news WHERE fetched_at < ?', (cutoff,))
+        deleted = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
 
 
 # Global database instance
