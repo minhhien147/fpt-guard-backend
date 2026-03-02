@@ -158,6 +158,11 @@ class Database:
             except Exception:
                 pass
 
+        # Upgrade existing group_members to Pro (migration)
+        cursor.execute(
+            "UPDATE users SET is_pro = 1 WHERE role = 'group_member' AND is_pro = 0"
+        )
+
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_group_codes_code ON group_codes(code)')
         
         # Create indexes for performance
@@ -794,14 +799,14 @@ class Database:
         return True
 
     def create_group_member(self, full_name, email, group_code_id):
-        """Create a group-member user (passwordless)"""
+        """Create a group-member user (passwordless). Group members are Pro by default."""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
             cursor.execute('''
                 INSERT INTO users (full_name, student_id, phone, email, password_hash,
-                                   role, is_active, group_code_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                                   role, is_active, group_code_id, is_pro, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, 1, ?)
             ''', (full_name, None, '', email, '', 'group_member',
                   group_code_id, datetime.now().isoformat()))
             user_id = cursor.lastrowid
