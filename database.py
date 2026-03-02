@@ -13,9 +13,11 @@ import json
 class Database:
     """Database handler for user management"""
     
-    def __init__(self, db_path="data/users.db"):
-        self.db_path = db_path
-        Path(os.path.dirname(db_path)).mkdir(parents=True, exist_ok=True)
+    def __init__(self, db_path=None):
+        # DB_PATH env var cho phép trỏ tới Railway Volume (persistent storage)
+        # VD: DB_PATH=/data/users.db  → dữ liệu không mất khi redeploy
+        self.db_path = db_path or os.environ.get('DB_PATH', 'data/users.db')
+        Path(os.path.dirname(self.db_path)).mkdir(parents=True, exist_ok=True)
         self.init_database()
     
     def get_connection(self):
