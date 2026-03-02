@@ -150,6 +150,22 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_published ON news(published DESC)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_news_category ON news(category)')
 
+        # User real-time location sharing (Pro feature)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_locations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                accuracy REAL,
+                share_token TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_loc_user ON user_locations(user_id)')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_loc_token ON user_locations(share_token)')
+
         # Add group_code_id to users (idempotent)
         try:
             cursor.execute('ALTER TABLE users ADD COLUMN group_code_id INTEGER REFERENCES group_codes(id)')
@@ -992,6 +1008,62 @@ class Database:
         cursor.execute('DELETE FROM fcm_tokens WHERE token = ?', (token,))
         conn.commit()
         conn.close()
+
+    # ── Real-time Location Sharing ────────────────────────────────────────────
+
+    def upsert_user_location(self, user_id: int, latitude: float, longitude: float,
+                             accuracy: float = None) -> str:
+        """Upsert user's current location. Returns share_token."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # Check if exists → reuse token
+        cursor.execute('SELECT share_token FROM user_locations WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        if row:
+            token = row['share_token']
+            cursor.execute('''
+                UPDATE user_locations
+                SET latitude = ?, longitude = ?, accuracy = ?, updated_at = ?
+                WHERE user_id = ?
+            ''', (latitude, longitude, accuracy, datetime.now().isoformat(), user_id))
+        else:
+            token = secrets.token_urlsafe(16)
+            cursor.execute('''
+                INSERT INTO user_locations (user_id, latitude, longitude, accuracy, share_token, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (user_id, latitude, longitude, accuracy, token, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+        return token
+
+    def get_location_by_token(self, token: str) -> dict:
+        """Get location info by share_token (public, no auth needed)."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT ul.*, u.full_name FROM user_locations ul
+            JOIN users u ON ul.user_id = u.id
+            WHERE ul.share_token = ?
+        ''', (token,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    # ── SOS History ───────────────────────────────────────────────────────────
+
+    def get_sos_history(self, user_id: int, limit: int = 20, offset: int = 0) -> tuple:
+        """Return (list, total) of SOS reports for a user, newest first."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT * FROM sos_reports WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+            (user_id, limit, offset)
+        )
+        reports = [dict(r) for r in cursor.fetchall()]
+        cursor.execute('SELECT COUNT(*) as cnt FROM sos_reports WHERE user_id = ?', (user_id,))
+        total = cursor.fetchone()['cnt']
+        conn.close()
+        return reports, total
 
     # ── News (RSS) ────────────────────────────────────────────────────────────
 

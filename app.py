@@ -1344,6 +1344,131 @@ def track_activity():
 # ============================================================================
 
 # ============================================================================
+# SOS HISTORY
+# ============================================================================
+
+@app.route('/api/sos/history', methods=['GET'])
+@require_auth
+def sos_history(session):
+    """Lịch sử SOS của user hiện tại (Pro feature).
+    Query: ?limit=20&offset=0
+    """
+    try:
+        user_id = session['user_id']
+        limit = min(int(request.args.get('limit', 20)), 50)
+        offset = int(request.args.get('offset', 0))
+        reports, total = db.get_sos_history(user_id=user_id, limit=limit, offset=offset)
+
+        # Stats
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT sos_count, sos_reset_at, is_pro FROM users WHERE id = ?', (user_id,))
+        urow = cursor.fetchone()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'reports': reports,
+            'total': total,
+            'this_month_count': urow['sos_count'] if urow else 0,
+            'is_pro': bool(urow['is_pro']) if urow else False,
+            'reset_at': urow['sos_reset_at'] if urow else None,
+            'limit': limit,
+            'offset': offset,
+        })
+    except Exception as e:
+        logger.error(f'sos_history error: {e}', exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# REAL-TIME LOCATION SHARING (Pro)
+# ============================================================================
+
+@app.route('/api/location/ping', methods=['POST'])
+@require_auth
+def location_ping(session):
+    """Cập nhật vị trí real-time. Trả về share_token (Pro only).
+    Body: { latitude, longitude, accuracy? }
+    """
+    try:
+        user_id = session['user_id']
+        # Check Pro
+        user = db.get_user_by_id(user_id)
+        if not user or not user.get('is_pro'):
+            return jsonify({'success': False, 'error': 'Tính năng dành cho tài khoản Pro'}), 403
+
+        data = request.get_json() or {}
+        lat = float(data.get('latitude', 0))
+        lng = float(data.get('longitude', 0))
+        acc = data.get('accuracy')
+
+        token = db.upsert_user_location(user_id, lat, lng, acc)
+        share_url = f"{request.host_url.rstrip('/')}/api/location/live/{token}"
+
+        return jsonify({
+            'success': True,
+            'share_token': token,
+            'share_url': share_url,
+            'updated_at': datetime.now(pytz.timezone(config.TIMEZONE)).isoformat(),
+        })
+    except Exception as e:
+        logger.error(f'location_ping error: {e}', exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/location/live/<token>', methods=['GET'])
+def location_live(token):
+    """Xem vị trí real-time qua link công khai (không cần đăng nhập).
+    Trả về HTML page với bản đồ nhúng.
+    """
+    loc = db.get_location_by_token(token)
+    if not loc:
+        return '<h2>Link không hợp lệ hoặc đã hết hạn.</h2>', 404
+
+    lat = loc['latitude']
+    lng = loc['longitude']
+    name = loc['full_name']
+    updated = loc['updated_at']
+    maps_url = f"https://www.google.com/maps?q={lat},{lng}"
+    embed_url = f"https://maps.google.com/maps?q={lat},{lng}&z=16&output=embed"
+
+    html = f"""<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vị trí của {name} – SAFE GUARD</title>
+<style>
+  body{{font-family:Arial,sans-serif;margin:0;background:#f0f4f8;}}
+  .card{{max-width:480px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.12);}}
+  .header{{background:#0077B6;color:#fff;padding:16px 20px;}}
+  .header h2{{margin:0;font-size:18px;}}
+  .header p{{margin:4px 0 0;font-size:13px;opacity:.85;}}
+  iframe{{width:100%;height:280px;border:0;}}
+  .info{{padding:16px 20px;}}
+  .info p{{margin:6px 0;font-size:14px;color:#333;}}
+  .btn{{display:block;background:#0077B6;color:#fff;text-align:center;padding:12px;border-radius:8px;
+        text-decoration:none;font-weight:bold;margin-top:12px;}}
+  .footer{{font-size:11px;color:#999;text-align:center;padding:10px 0 16px;}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h2>📍 Vị trí của {name}</h2>
+    <p>Cập nhật lúc: {updated[:19].replace('T',' ')}</p>
+  </div>
+  <iframe src="{embed_url}" allowfullscreen></iframe>
+  <div class="info">
+    <p><strong>Tọa độ:</strong> {lat:.6f}, {lng:.6f}</p>
+    <a href="{maps_url}" class="btn" target="_blank">🗺️ Mở Google Maps</a>
+  </div>
+  <div class="footer">SAFE GUARD – Ứng dụng bảo vệ an toàn sinh viên</div>
+</div>
+</body></html>"""
+    return html
+
+
+# ============================================================================
 # NEWS ENDPOINTS
 # ============================================================================
 
