@@ -19,7 +19,7 @@ from data_processor import WaterLevelProcessor
 import config
 from database import db
 from auth import require_auth, require_admin, get_client_ip, get_device_info
-from email_sender import send_verification_otp, send_resend_otp, send_pro_activated, send_pro_expired
+from email_sender import send_verification_otp, send_resend_otp, send_pro_activated, send_pro_expired, send_reset_password_otp
 from push_service import notify_sos, notify_pro_activated, notify_account_locked, send_push
 import json as json_module
 
@@ -626,6 +626,75 @@ def resend_otp():
     except Exception as e:
         logger.error(f'Error resending OTP: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    """
+    Gửi OTP đặt lại mật khẩu đến email.
+
+    Body: { "email": "user@example.com" }
+    """
+    try:
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip().lower()
+        if not email:
+            return jsonify({'success': False, 'error': 'email là bắt buộc'}), 400
+
+        user = db.get_user_by_email(email)
+        # Không tiết lộ email có tồn tại hay không (bảo mật)
+        if not user:
+            return jsonify({'success': True, 'message': f'Nếu email {email} tồn tại, mã OTP đã được gửi.'})
+
+        if not user.get('is_active', 1):
+            return jsonify({'success': False, 'error': 'Tài khoản đã bị khóa'}), 403
+
+        otp = db.generate_reset_otp(user['id'])
+        sent, send_err = send_reset_password_otp(email, user['full_name'], otp)
+
+        db.log_activity(user['id'], 'forgot_password_requested', ip_address=get_client_ip())
+        return jsonify({
+            'success': True,
+            'email_sent': sent,
+            'email_error': send_err if not sent else None,
+            'message': f'Mã OTP đã được gửi đến {email}' if sent else f'Không gửi được email: {send_err}',
+        })
+    except Exception as e:
+        logger.error(f'Error in forgot_password: {e}')
+        return jsonify({'success': False, 'error': 'Đã xảy ra lỗi, vui lòng thử lại'}), 500
+
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    """
+    Đặt lại mật khẩu bằng OTP.
+
+    Body: { "email": "user@example.com", "otp": "123456", "new_password": "..." }
+    """
+    try:
+        data = request.get_json() or {}
+        email        = (data.get('email')        or '').strip().lower()
+        otp          = (data.get('otp')          or '').strip()
+        new_password = (data.get('new_password') or '').strip()
+
+        if not email or not otp or not new_password:
+            return jsonify({'success': False, 'error': 'email, otp và new_password là bắt buộc'}), 400
+
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'error': 'Mật khẩu phải có ít nhất 6 ký tự'}), 400
+
+        result = db.verify_reset_otp_and_change_password(email, otp, new_password)
+        if result is not True:
+            return jsonify({'success': False, 'error': result}), 400
+
+        user = db.get_user_by_email(email)
+        if user:
+            db.log_activity(user['id'], 'password_reset', ip_address=get_client_ip())
+
+        return jsonify({'success': True, 'message': 'Mật khẩu đã được đặt lại thành công'})
+    except Exception as e:
+        logger.error(f'Error in reset_password: {e}')
+        return jsonify({'success': False, 'error': 'Đặt lại mật khẩu thất bại'}), 500
 
 
 @app.route('/api/auth/group-login', methods=['POST'])

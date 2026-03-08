@@ -154,6 +154,38 @@ def send_pro_expired(to_email: str, full_name: str) -> tuple[bool, str]:
     return _send(to_email, '[SAFE GUARD] Gói Pro của bạn đã hết hạn', html)
 
 
+def send_reset_password_otp(to_email: str, full_name: str, otp: str) -> tuple[bool, str]:
+    """Gửi OTP đặt lại mật khẩu."""
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;background:#f4f7fb;padding:32px 16px;">
+      <div style="background:#03045E;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+        <h1 style="color:#fff;font-size:24px;margin:0;letter-spacing:3px;">SAFE GUARD</h1>
+        <p style="color:#90E0EF;margin:8px 0 0;font-size:14px;">Đặt lại mật khẩu</p>
+      </div>
+      <div style="background:#fff;border-radius:0 0 16px 16px;padding:36px 32px;">
+        <p style="color:#2d3748;font-size:15px;">Xin chào <strong>{full_name}</strong>,</p>
+        <p style="color:#4a5568;font-size:14px;line-height:1.6;">
+          Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản <strong>SAFE GUARD</strong> của bạn.<br>
+          Nhập mã OTP bên dưới trong ứng dụng để tiếp tục.
+        </p>
+        <div style="text-align:center;margin:32px 0;">
+          <div style="display:inline-block;background:#03045E;color:#fff;
+                      font-size:36px;font-weight:bold;letter-spacing:12px;
+                      padding:18px 36px;border-radius:12px;">{otp}</div>
+        </div>
+        <p style="color:#718096;font-size:13px;text-align:center;">
+          Mã có hiệu lực trong <strong>10 phút</strong>.<br>
+          Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này và mật khẩu của bạn sẽ không thay đổi.
+        </p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;">
+        <p style="color:#a0aec0;font-size:12px;text-align:center;">
+          © 2024 SAFE GUARD – FPT University Cần Thơ
+        </p>
+      </div>
+    </div>"""
+    return _send(to_email, f'[SAFE GUARD] Mã đặt lại mật khẩu: {otp}', html)
+
+
 def send_verification_otp(to_email: str, full_name: str, otp: str) -> tuple[bool, str]:
     return _send(to_email, f'[SAFE GUARD] Mã xác thực email: {otp}',
                  _otp_html(full_name, otp, is_resend=False))

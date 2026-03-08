@@ -183,6 +183,16 @@ class Database:
             except Exception:
                 pass
 
+        # Password reset OTP columns (idempotent)
+        for col_def in [
+            'ALTER TABLE users ADD COLUMN reset_otp TEXT',
+            'ALTER TABLE users ADD COLUMN reset_otp_expires_at TEXT',
+        ]:
+            try:
+                cursor.execute(col_def)
+            except Exception:
+                pass
+
         # Pro plan + SOS count (idempotent)
         for col_def in [
             'ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0',
@@ -832,6 +842,44 @@ class Database:
         cursor.execute(
             'UPDATE users SET is_email_verified = 1, email_otp = NULL, email_otp_expires_at = NULL WHERE id = ?',
             (user['id'],)
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    # ── Password Reset OTP ───────────────────────────────────────────────────
+
+    def generate_reset_otp(self, user_id):
+        """Generate a 6-digit OTP for password reset (expires in 10 minutes)."""
+        import random
+        otp = f"{random.randint(0, 999999):06d}"
+        expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET reset_otp = ?, reset_otp_expires_at = ? WHERE id = ?',
+            (otp, expires_at, user_id)
+        )
+        conn.commit()
+        conn.close()
+        return otp
+
+    def verify_reset_otp_and_change_password(self, email, otp, new_password):
+        """Verify reset OTP, update password hash, clear OTP. Returns True or error string."""
+        user = self.get_user_by_email(email)
+        if not user:
+            return 'Email không tồn tại'
+        if user.get('reset_otp') != otp:
+            return 'Mã OTP không đúng'
+        expires_at = user.get('reset_otp_expires_at')
+        if not expires_at or datetime.now() > datetime.fromisoformat(expires_at):
+            return 'Mã OTP đã hết hạn (10 phút)'
+        new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET password_hash = ?, reset_otp = NULL, reset_otp_expires_at = NULL WHERE id = ?',
+            (new_hash, user['id'])
         )
         conn.commit()
         conn.close()
