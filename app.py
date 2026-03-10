@@ -891,15 +891,25 @@ def update_profile():
         data = request.get_json()
         
         # Only allow updating certain fields
-        allowed_fields = ['full_name', 'phone', 'student_id']
-        updates = {k: v for k, v in data.items() if k in allowed_fields}
-        
+        allowed_fields = ['full_name', 'phone', 'student_id', 'email']
+        updates = {k: v for k, v in data.items() if k in allowed_fields and v is not None}
+
         if not updates:
             return jsonify({
                 'success': False,
                 'error': 'No valid fields to update'
             }), 400
-        
+
+        # Validate email format + uniqueness if email is being changed
+        if 'email' in updates:
+            new_email = updates['email'].strip().lower()
+            if '@' not in new_email:
+                return jsonify({'success': False, 'error': 'Email không hợp lệ'}), 400
+            existing = db.get_user_by_email(new_email)
+            if existing and existing['id'] != request.user_id:
+                return jsonify({'success': False, 'error': 'Email này đã được sử dụng bởi tài khoản khác'}), 409
+            updates['email'] = new_email
+
         user = db.update_user(request.user_id, **updates)
         
         # Log activity
