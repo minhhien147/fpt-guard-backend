@@ -474,6 +474,91 @@
             color: #a0aec0;
         }
 
+        /* Users toolbar */
+        .users-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .users-toolbar .search-box {
+            flex: 1;
+            min-width: 220px;
+            margin-bottom: 0;
+        }
+        .users-toolbar-right {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .users-toolbar-right select {
+            padding: 10px 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 13px;
+            cursor: pointer;
+            background: white;
+            color: var(--dark);
+            transition: border-color 0.2s;
+        }
+        .users-toolbar-right select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        /* Pagination */
+        .pagination-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 4px 0;
+        }
+        .pagination-info {
+            color: #718096;
+            font-size: 13px;
+        }
+        .pagination-controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .page-btn {
+            min-width: 36px;
+            height: 36px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--dark);
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .page-btn:hover:not(:disabled) {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        .page-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            font-weight: 600;
+        }
+        .page-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
         /* Login Form */
         .login-form {
             max-width: 440px;
@@ -843,9 +928,25 @@
 
                 <!-- Users Tab -->
                 <div id="usersTab" class="tab-content active">
-                    <div class="search-box">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="userSearch" placeholder="Tìm kiếm theo tên, email, MSSV..." onkeyup="searchUsers()">
+                    <div class="users-toolbar">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="userSearch" placeholder="Tìm kiếm theo tên, email, MSSV..." oninput="searchUsers()">
+                        </div>
+                        <div class="users-toolbar-right">
+                            <select id="roleFilter" onchange="filterByRole()">
+                                <option value="">Tất cả vai trò</option>
+                                <option value="user">User</option>
+                                <option value="group_member">Thành viên nhóm</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                            <select id="pageSizeSelect" onchange="changePageSize()">
+                                <option value="10">10 / trang</option>
+                                <option value="15" selected>15 / trang</option>
+                                <option value="25">25 / trang</option>
+                                <option value="50">50 / trang</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="loading" id="usersLoading">
                         <div class="spinner"></div>
@@ -870,6 +971,10 @@
                                 <!-- Dynamic content -->
                             </tbody>
                         </table>
+                    </div>
+                    <div class="pagination-wrapper" id="paginationWrapper">
+                        <div class="pagination-info" id="paginationInfo"></div>
+                        <div class="pagination-controls" id="paginationControls"></div>
                     </div>
                 </div>
 
@@ -996,7 +1101,9 @@
     <script>
         let authToken = localStorage.getItem('adminToken');
         let currentPage = 1;
+        let pageSize = 15;
         let allUsers = [];
+        let filteredUsers = [];
 
         function escapeHtml(s) {
             if (s == null) return '';
@@ -1111,25 +1218,74 @@
             }
         }
 
-        async function loadUsers(page = 1) {
+        async function loadUsers() {
             document.getElementById('usersLoading').style.display = 'block';
-            
             try {
-                const response = await fetch(`/api/admin/users?limit=50&offset=${(page - 1) * 50}`, {
+                const response = await fetch('/api/admin/users?limit=500&offset=0', {
                     headers: { 'Authorization': `Bearer ${authToken}` }
                 });
-                
                 const data = await response.json();
-                
                 if (data.success) {
                     allUsers = data.data.users;
-                    renderUsers(allUsers);
+                    filteredUsers = [...allUsers];
+                    currentPage = 1;
+                    renderPagedUsers();
                 }
             } catch (error) {
                 console.error('Error loading users:', error);
             } finally {
                 document.getElementById('usersLoading').style.display = 'none';
             }
+        }
+
+        function renderPagedUsers() {
+            const start = (currentPage - 1) * pageSize;
+            const pageUsers = filteredUsers.slice(start, start + pageSize);
+            renderUsers(pageUsers);
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const total = filteredUsers.length;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const start = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+            const end = Math.min(currentPage * pageSize, total);
+
+            document.getElementById('paginationInfo').textContent =
+                `Hiển thị ${start}–${end} / ${total} người dùng`;
+
+            const ctrl = document.getElementById('paginationControls');
+            ctrl.innerHTML = '';
+
+            const prev = document.createElement('button');
+            prev.className = 'page-btn';
+            prev.innerHTML = '<i class="fas fa-chevron-left"></i>';
+            prev.disabled = currentPage === 1;
+            prev.onclick = () => { currentPage--; renderPagedUsers(); };
+            ctrl.appendChild(prev);
+
+            getPageNumbers(currentPage, totalPages).forEach(p => {
+                const btn = document.createElement('button');
+                btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
+                btn.textContent = p === '…' ? '…' : p;
+                btn.disabled = p === '…';
+                if (p !== '…') btn.onclick = () => { currentPage = p; renderPagedUsers(); };
+                ctrl.appendChild(btn);
+            });
+
+            const next = document.createElement('button');
+            next.className = 'page-btn';
+            next.innerHTML = '<i class="fas fa-chevron-right"></i>';
+            next.disabled = currentPage === totalPages;
+            next.onclick = () => { currentPage++; renderPagedUsers(); };
+            ctrl.appendChild(next);
+        }
+
+        function getPageNumbers(cur, total) {
+            if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+            if (cur <= 4) return [1, 2, 3, 4, 5, '…', total];
+            if (cur >= total - 3) return [1, '…', total - 4, total - 3, total - 2, total - 1, total];
+            return [1, '…', cur - 1, cur, cur + 1, '…', total];
         }
 
         function renderUsers(users) {
@@ -1188,13 +1344,32 @@
         }
 
         function searchUsers() {
-            const searchTerm = document.getElementById('userSearch').value.toLowerCase();
-            const filteredUsers = allUsers.filter(user => 
-                user.full_name.toLowerCase().includes(searchTerm) ||
-                user.email.toLowerCase().includes(searchTerm) ||
-                (user.student_id && user.student_id.toLowerCase().includes(searchTerm))
-            );
-            renderUsers(filteredUsers);
+            applyFilters();
+        }
+
+        function filterByRole() {
+            applyFilters();
+        }
+
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('pageSizeSelect').value);
+            currentPage = 1;
+            renderPagedUsers();
+        }
+
+        function applyFilters() {
+            const term = document.getElementById('userSearch').value.toLowerCase();
+            const role = document.getElementById('roleFilter').value;
+            filteredUsers = allUsers.filter(u => {
+                const matchSearch = !term ||
+                    u.full_name.toLowerCase().includes(term) ||
+                    u.email.toLowerCase().includes(term) ||
+                    (u.student_id && u.student_id.toLowerCase().includes(term));
+                const matchRole = !role || u.role === role;
+                return matchSearch && matchRole;
+            });
+            currentPage = 1;
+            renderPagedUsers();
         }
 
         async function viewUser(userId) {
@@ -1251,7 +1426,14 @@
                     },
                     body: JSON.stringify({ is_active: newStatus ? 1 : 0 })
                 });
-                if (response.ok) loadUsers();
+                if (response.ok) {
+                    const u = allUsers.find(u => u.id === userId);
+                    if (u) u.is_active = newStatus;
+                    applyFilters();
+                    // Restore page after applyFilters resets to 1
+                    currentPage = Math.min(currentPage, Math.max(1, Math.ceil(filteredUsers.length / pageSize)));
+                    renderPagedUsers();
+                }
             } catch (error) {
                 console.error('Error toggling user status:', error);
             }
@@ -1271,7 +1453,12 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    loadUsers();
+                    const u = allUsers.find(u => u.id === userId);
+                    if (u) { u.is_pro = isPro; u.pro_expires_at = data.data?.pro_expires_at ?? null; }
+                    const savedPage = currentPage;
+                    applyFilters();
+                    currentPage = Math.min(savedPage, Math.max(1, Math.ceil(filteredUsers.length / pageSize)));
+                    renderPagedUsers();
                 } else {
                     alert('Lỗi: ' + (data.error || 'Không xác định'));
                 }
