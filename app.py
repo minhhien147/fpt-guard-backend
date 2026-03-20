@@ -910,6 +910,19 @@ def update_profile():
                 return jsonify({'success': False, 'error': 'Email này đã được sử dụng bởi tài khoản khác'}), 409
             updates['email'] = new_email
 
+        # Validate student_id uniqueness if being changed
+        if 'student_id' in updates:
+            new_sid = (updates['student_id'] or '').strip()
+            if new_sid:
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM users WHERE student_id = ?', (new_sid,))
+                row = cursor.fetchone()
+                conn.close()
+                if row and row['id'] != request.user_id:
+                    return jsonify({'success': False, 'error': 'Mã số sinh viên này đã được sử dụng bởi tài khoản khác'}), 409
+            updates['student_id'] = new_sid or None
+
         user = db.update_user(request.user_id, **updates)
         
         # Log activity
@@ -922,7 +935,9 @@ def update_profile():
             'success': True,
             'data': user
         })
-        
+
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 409
     except Exception as e:
         logger.error(f"Error updating profile: {str(e)}")
         return jsonify({

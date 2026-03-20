@@ -22,8 +22,12 @@ class Database:
     
     def get_connection(self):
         """Get database connection"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
+        # WAL mode allows concurrent reads alongside a single writer,
+        # and busy_timeout retries instead of immediately raising "database is locked"
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA busy_timeout=5000')
         return conn
     
     def init_database(self):
@@ -342,16 +346,24 @@ class Database:
                 updates.append(f"{field} = ?")
                 values.append(value)
         
-        if updates:
-            updates.append("updated_at = ?")
-            values.append(datetime.now().isoformat())
-            values.append(user_id)
-            
-            query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
-            cursor.execute(query, values)
-            conn.commit()
-        
-        conn.close()
+        try:
+            if updates:
+                updates.append("updated_at = ?")
+                values.append(datetime.now().isoformat())
+                values.append(user_id)
+                
+                query = f"UPDATE users SET {', '.join(updates)} WHERE id = ?"
+                cursor.execute(query, values)
+                conn.commit()
+        except sqlite3.IntegrityError as e:
+            conn.rollback()
+            if 'student_id' in str(e):
+                raise ValueError('Mã số sinh viên này đã được sử dụng bởi tài khoản khác')
+            elif 'email' in str(e):
+                raise ValueError('Email này đã được sử dụng bởi tài khoản khác')
+            raise
+        finally:
+            conn.close()
         return self.get_user_by_id(user_id)
     
     def get_all_users(self, limit=100, offset=0, role=None):
